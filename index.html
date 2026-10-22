@@ -577,9 +577,9 @@ const DALIL = [
    sumber:'Sifat mazmumah — larangan mengumpat',
    huraian:'Perumpamaan yang amat kuat digunakan untuk menggambarkan betapa jijiknya perbuatan mengumpat di sisi Allah.'},
 
-  {id:'ah7', topic:'Akhlak', subtopic:'Kesederhanaan & tawaduk', type:'quran', surah:31, ayah:18, noAudio:true, ref:'Surah Luqman: 18-19',
-   arabic:'وَلَا تُصَعِّرْ خَدَّكَ لِلنَّاسِ وَلَا تَمْشِ فِى ٱلْأَرْضِ مَرَحًا ۖ وَٱقْصِدْ فِى مَشْيِكَ وَٱغْضُضْ مِن صَوْتِكَ',
-   terjemahan:'"Dan janganlah engkau memalingkan mukamu (kerana sombong) kepada manusia, dan janganlah engkau berjalan di bumi dengan berlagak sombong... sederhanakanlah langkahmu dan rendahkanlah suaramu."',
+  {id:'ah7', topic:'Akhlak', subtopic:'Kesederhanaan & tawaduk', type:'quran', surah:31, ayah:18, ayahEnd:19, ref:'Surah Luqman: 18-19',
+   arabic:'وَلَا تُصَعِّرْ خَدَّكَ لِلنَّاسِ وَلَا تَمْشِ فِى ٱلْأَرْضِ مَرَحًا ۖ إِنَّ ٱللَّهَ لَا يُحِبُّ كُلَّ مُخْتَالٍ فَخُورٍ ﴿١٨﴾ وَٱقْصِدْ فِى مَشْيِكَ وَٱغْضُضْ مِن صَوْتِكَ ۚ إِنَّ أَنكَرَ ٱلْأَصْوَٰتِ لَصَوْتُ ٱلْحَمِيرِ ﴿١٩﴾',
+   terjemahan:'"Dan janganlah engkau memalingkan mukamu (kerana sombong) kepada manusia, dan janganlah engkau berjalan di bumi dengan berlagak sombong; sesungguhnya Allah tidak suka kepada setiap orang yang sombong takbur, lagi membanggakan diri. Dan sederhanakanlah langkahmu semasa berjalan, dan rendahkanlah suaramu; sesungguhnya seburuk-buruk suara ialah suara keldai."',
    sumber:'Nasihat Luqman al-Hakim kepada anaknya',
    huraian:'Nasihat Luqman ini merangkumi adab pergaulan, kesederhanaan tingkah laku, dan kerendahan hati sebagai teras akhlak sosial.'},
 
@@ -631,6 +631,7 @@ const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz5YLbcDGLbasEbLoLHU
    ============================================================ */
 const APP_PASSCODE = 'iDALIL-KMKJ-2026';
 const BACKEND_KEY  = 'iDALIL-KMKJ-2026-Rahsia';
+const LECTURER_PIN = 'DrM-7413'; // PIN untuk masuk bahagian Pensyarah (tukar ikut suka)
 
 function groupFlatRecords(rows){
   const groups = {};
@@ -708,7 +709,15 @@ function renderRoleSwitch(){
     <button class="role-btn ${ROLE==='pensyarah'?'active':''}" id="btnPensyarah">${ICON.chart} Pensyarah</button>
   `;
   document.getElementById('btnPelajar').onclick = ()=>{ ROLE='pelajar'; renderAll(); };
-  document.getElementById('btnPensyarah').onclick = ()=>{ ROLE='pensyarah'; renderAll(); };
+  document.getElementById('btnPensyarah').onclick = ()=>{
+    if(sessionStorage.getItem('idalil-lecturer-ok') !== 'yes'){
+      const pin = prompt('Bahagian ini untuk pensyarah sahaja.\nSila masukkan PIN pensyarah:');
+      if(pin === null) return; // dibatalkan
+      if(pin.trim() !== LECTURER_PIN){ alert('PIN salah.'); return; }
+      sessionStorage.setItem('idalil-lecturer-ok', 'yes');
+    }
+    ROLE='pensyarah'; renderAll();
+  };
 }
 
 function renderAll(){
@@ -1294,6 +1303,23 @@ async function toggleTajweedView(d){
 }
 
 /* ---- audio qari (alquran.cloud) + audio rujukan manual pensyarah ---- */
+
+/* ---- pautan audio Google Drive: cuba pautan alternatif jika pautan asal gagal dimuatkan ---- */
+function driveAltUrl(url){
+  const m = /[?&]id=([^&]+)/.exec(url || '');
+  return m ? `https://drive.usercontent.google.com/download?id=${m[1]}&export=download` : null;
+}
+function playableAudio(url){
+  // Pulangkan elemen Audio; jika ralat muat, tukar sekali ke pautan alternatif
+  const a = new Audio(url);
+  const alt = driveAltUrl(url);
+  let swapped = false;
+  a.addEventListener('error', ()=>{
+    if(!swapped && alt){ swapped = true; a.src = alt; a.load(); }
+  });
+  return a;
+}
+
 let audioMeta = null; // {dalilId, isManual, surah, current, ayahEnd}
 
 async function fetchAyahAudioUrl(surah, ayah){
@@ -1326,7 +1352,7 @@ async function startPlayback(d){
     const manualUrl = MANUAL_AUDIO[d.id];
     if((d.noAudio || d.type==='hadith') && manualUrl){
       audioMeta = {dalilId:d.id, isManual:true, current:1, ayahEnd:1};
-      audioEl = new Audio(manualUrl);
+      audioEl = playableAudio(manualUrl);
       audioEl.addEventListener('ended', ()=>{ btn.innerHTML = `${ICON.play} Main semula`; });
       await audioEl.play();
       btn.innerHTML = `${ICON.pause} Jeda`;
@@ -1708,7 +1734,7 @@ function renderAudioManagerList(){
 function renderAudioEditor(dalilId, container){
   const existingUrl = MANUAL_AUDIO[dalilId];
   container.innerHTML = `
-    ${existingUrl ? `<audio controls src="${existingUrl}" style="width:100%;margin-bottom:8px;"></audio>` : ''}
+    ${existingUrl ? `<audio controls src="${existingUrl}" data-alt="${driveAltUrl(existingUrl)||''}" onerror="if(this.dataset.alt && !this.dataset.swapped){this.dataset.swapped=1;this.src=this.dataset.alt;this.load();}" style="width:100%;margin-bottom:8px;"></audio>` : ''}
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
       <button class="btn rec" id="rec-${dalilId}">${ICON.mic} Rekod bacaan</button>
       <span class="note" style="margin:0;">atau</span>
