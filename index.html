@@ -1109,7 +1109,10 @@ function openModal(id){
     <div class="ref">${d.ref} ${d.type==='hadith' ? '(Hadith)' : ''}</div>
     <div class="arabic-full" id="arabicDisplay" data-mode="plain">${d.arabic}</div>
     <div id="tajweedLegendWrap"></div>
-    ${(d.type==='quran' && !d.noAudio) ? `<div style="margin:-8px 0 14px;"><button class="btn ghost" id="tajweedBtn">${ICON.palette} Lihat warna tajwid</button></div>` : ''}
+    <!-- Ciri "Lihat warna tajwid" dimatikan buat sementara — data API tajwid didapati tidak
+         serasi dengan penghurai semasa dan memaparkan teks yang mengelirukan. Akan dibaiki
+         semula selepas diuji dengan teliti. -->
+    ${false ? `<div style="margin:-8px 0 14px;"><button class="btn ghost" id="tajweedBtn">${ICON.palette} Lihat warna tajwid</button></div>` : ''}
     <div class="terjemahan">${d.terjemahan}</div>
     <div class="huraian-box"><b>Huraian ringkas:</b> ${d.huraian}</div>
     <div class="sumber">${d.sumber}</div>
@@ -1130,7 +1133,7 @@ function openModal(id){
     <div class="feedback" id="feedbackBox"></div>
 
     <div class="progress-box" id="progressBox"></div>
-    <p class="note">${ICON.info} Semakan bacaan membandingkan perkataan yang disebut dengan teks rasmi (ketepatan perkataan sahaja). Warna tajwid di atas ialah panduan rujukan piawai — kedua-duanya belum dapat mengesan kesalahan makhraj/sebutan pelajar secara automatik; pelajar perlu bandingkan sendiri dengan telinga dan bimbingan pensyarah.</p>
+    <p class="note">${ICON.info} Semakan bacaan membandingkan perkataan yang disebut dengan teks rasmi (ketepatan perkataan sahaja) — ia belum dapat mengesan kesalahan makhraj/sebutan pelajar secara automatik; pelajar perlu bandingkan sendiri dengan telinga dan bimbingan pensyarah.</p>
   `;
   renderProgressBox(p);
   renderImproveBanner(p);
