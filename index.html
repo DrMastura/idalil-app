@@ -1341,6 +1341,25 @@ async function toggleTajweedView(d){
 
 /* ---- audio qari (alquran.cloud) + audio rujukan manual pensyarah ---- */
 
+
+/* ---- audio pensyarah: ambil melalui Google Apps Script (lebih pasti daripada pautan Drive terus) ---- */
+const MANUAL_BLOB_CACHE = {}; // fileId -> blob URL
+function driveIdOf(url){ const m = /[?&]id=([^&]+)/.exec(url || ''); return m ? m[1] : null; }
+async function manualAudioBlobUrl(url){
+  const id = driveIdOf(url);
+  if(!id) return url;
+  if(MANUAL_BLOB_CACHE[id]) return MANUAL_BLOB_CACHE[id];
+  const res = await fetch(SCRIPT_URL + '?key=' + encodeURIComponent(BACKEND_KEY) + '&audioId=' + encodeURIComponent(id));
+  const json = await res.json();
+  if(!json || !json.ok || !json.data) throw new Error((json && json.error) || 'Audio tidak diterima');
+  const bin = atob(json.data);
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  const blobUrl = URL.createObjectURL(new Blob([bytes], {type: json.mime || 'audio/mpeg'}));
+  MANUAL_BLOB_CACHE[id] = blobUrl;
+  return blobUrl;
+}
+
 /* ---- pautan audio Google Drive: cuba pautan alternatif jika pautan asal gagal dimuatkan ---- */
 function driveAltUrl(url){
   const m = /[?&]id=([^&]+)/.exec(url || '');
@@ -1389,7 +1408,10 @@ async function startPlayback(d){
     const manualUrl = MANUAL_AUDIO[d.id];
     if(manualUrl){
       audioMeta = {dalilId:d.id, isManual:true, current:1, ayahEnd:1};
-      audioEl = playableAudio(manualUrl);
+      let playUrl;
+      try{ playUrl = await manualAudioBlobUrl(manualUrl); }
+      catch(e){ console.warn('Gagal ambil audio melalui Apps Script, cuba pautan Drive terus', e); playUrl = null; }
+      audioEl = playUrl ? new Audio(playUrl) : playableAudio(manualUrl);
       audioEl.addEventListener('ended', ()=>{ btn.innerHTML = `${ICON.play} Main semula`; });
       await audioEl.play();
       btn.innerHTML = `${ICON.pause} Jeda`;
@@ -1874,7 +1896,7 @@ function renderAudioManagerList(){
 function renderAudioEditor(dalilId, container){
   const existingUrl = MANUAL_AUDIO[dalilId];
   container.innerHTML = `
-    ${existingUrl ? `<audio controls src="${existingUrl}" data-alt="${driveAltUrl(existingUrl)||''}" onerror="if(this.dataset.alt && !this.dataset.swapped){this.dataset.swapped=1;this.src=this.dataset.alt;this.load();}" style="width:100%;margin-bottom:8px;"></audio>` : ''}
+    ${existingUrl ? `<audio controls id="existingAudio-${dalilId}" data-alt="${driveAltUrl(existingUrl)||''}" onerror="if(this.dataset.alt && !this.dataset.swapped){this.dataset.swapped=1;this.src=this.dataset.alt;this.load();}" style="width:100%;margin-bottom:8px;"></audio><div class="note" id="existingAudioNote-${dalilId}" style="margin:0 0 8px;">Memuatkan rakaman…</div>` : ''}
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
       <button class="btn rec" id="rec-${dalilId}">${ICON.mic} Rekod bacaan</button>
       <span class="note" style="margin:0;">atau</span>
@@ -1885,6 +1907,13 @@ function renderAudioEditor(dalilId, container){
     <div class="note" id="status-${dalilId}" style="margin-top:6px;"></div>
   `;
 
+  if(existingUrl){
+    const ea = document.getElementById(`existingAudio-${dalilId}`);
+    const en = document.getElementById(`existingAudioNote-${dalilId}`);
+    manualAudioBlobUrl(existingUrl)
+      .then(u=>{ ea.src = u; en.textContent = ''; })
+      .catch(()=>{ ea.src = existingUrl; en.textContent = '⚠️ Rakaman tak dapat dimuatkan melalui Apps Script — cuba pautan terus.'; });
+  }
   const uploadBtn = document.getElementById(`upload-${dalilId}`);
   const statusEl = document.getElementById(`status-${dalilId}`);
   const previewEl = document.getElementById(`preview-${dalilId}`);
