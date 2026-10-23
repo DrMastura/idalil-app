@@ -229,6 +229,24 @@
 
   footer.app{text-align:center;color:rgba(240,223,168,.5);font-size:11.5px;margin-top:26px;}
 
+
+  /* ============ PENGULANG BAHAGIAN AUDIO ============ */
+  .loop-panel{display:none;margin:14px 0 4px;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--parchment-2);}
+  .loop-panel.show{display:block;}
+  .loop-head{font-size:12.5px;font-weight:600;color:var(--ink-2);margin-bottom:4px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+  .loop-hint{font-size:11px;color:#8a7d55;margin-bottom:12px;line-height:1.45;}
+  .loop-track{position:relative;height:36px;margin:0 11px 12px;touch-action:none;user-select:none;}
+  .loop-track::before{content:'';position:absolute;left:0;right:0;top:15px;height:6px;border-radius:6px;background:#d9d2bf;}
+  .loop-sel{position:absolute;top:15px;height:6px;border-radius:6px;background:linear-gradient(90deg,var(--gold),var(--gold-2));}
+  .loop-pos{position:absolute;top:8px;width:2px;height:20px;background:var(--rose);border-radius:2px;transform:translateX(-1px);pointer-events:none;}
+  .loop-handle{position:absolute;top:4px;width:28px;height:28px;margin-left:-14px;border-radius:50%;background:var(--ink-2);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:grab;box-shadow:0 2px 8px rgba(22,22,52,.35);border:2px solid var(--gold-2);touch-action:none;}
+  .loop-handle:active{cursor:grabbing;transform:scale(1.08);}
+  .loop-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .loop-controls .btn{padding:8px 12px;font-size:12.5px;}
+  .loop-controls .btn.on{background:var(--rose);color:#fff;border-color:var(--rose);}
+  .loop-controls .sep{width:1px;height:22px;background:var(--line);margin:0 2px;}
+  .loop-controls .btn.speed.on{background:var(--ink-2);color:#fff;border-color:var(--ink-2);}
+
   /* ============ SPLASH SCREEN ============ */
   .splash{
     position:fixed;inset:0;z-index:200;
@@ -1130,13 +1148,31 @@ function openModal(id){
 
     <div class="controls">
       ${(d.type==='quran' && (!d.noAudio || MANUAL_AUDIO[d.id]))
-        ? `<button class="btn gold" id="playBtn">${ICON.play} Dengar bacaan${d.noAudio?' rujukan pensyarah':' qari'}</button>`
+        ? `<button class="btn gold" id="playBtn">${ICON.play} Dengar bacaan${MANUAL_AUDIO[d.id]?' rujukan pensyarah':' qari'}</button>`
         : (d.type==='hadith' && MANUAL_AUDIO[d.id])
           ? `<button class="btn gold" id="playBtn">${ICON.play} Dengar bacaan rujukan pensyarah</button>`
           : d.type==='hadith'
             ? `<span class="note" style="margin:0;">Audio rujukan belum dimuat naik oleh pensyarah untuk hadith ini — fokus kepada latihan sebutan.</span>`
             : `<span class="note" style="margin:0;">⚠️ Potongan ayat ini sebahagian sahaja daripada ayat penuh, jadi audio qari (yang membaca ayat penuh) tidak dipaparkan di sini supaya tidak mengelirukan. Pensyarah boleh sediakan bacaan rujukan sendiri melalui Papan Pantau.</span>`}
       <button class="btn rec" id="recBtn">${ICON.mic} Rakam bacaan saya</button>
+    </div>
+
+    <div class="loop-panel" id="loopPanel">
+      <div class="loop-head"><span>🔁 Ulang bahagian yang tak jelas</span><span id="loopTimes"></span></div>
+      <div class="loop-hint">Seret penanda <b>A</b> dan <b>B</b> untuk pilih bahagian bacaan, kemudian tekan <b>Ulang bahagian</b>. Perlahankan kelajuan jika perlu.</div>
+      <div class="loop-track" id="loopTrack">
+        <div class="loop-sel" id="loopSel"></div>
+        <div class="loop-pos" id="loopPos"></div>
+        <div class="loop-handle" id="loopA" role="slider" aria-label="Penanda mula">A</div>
+        <div class="loop-handle" id="loopB" role="slider" aria-label="Penanda tamat">B</div>
+      </div>
+      <div class="loop-controls">
+        <button class="btn ghost" id="loopToggle">🔁 Ulang bahagian</button>
+        <span class="sep"></span>
+        <button class="btn ghost speed on" data-rate="1">1×</button>
+        <button class="btn ghost speed" data-rate="0.75">0.75×</button>
+        <button class="btn ghost speed" data-rate="0.5">0.5×</button>
+      </div>
     </div>
 
     <div class="feedback" id="feedbackBox"></div>
@@ -1146,6 +1182,7 @@ function openModal(id){
   `;
   renderProgressBox(p);
   renderImproveBanner(p);
+  initLoopPanel();
   const playBtn = document.getElementById('playBtn');
   if(playBtn) playBtn.onclick = ()=> handlePlayPauseClick(d);
   const tajweedBtn = document.getElementById('tajweedBtn');
@@ -1350,7 +1387,7 @@ async function startPlayback(d){
   if(audioEl){ try{audioEl.pause();}catch(e){} }
   try{
     const manualUrl = MANUAL_AUDIO[d.id];
-    if((d.noAudio || d.type==='hadith') && manualUrl){
+    if(manualUrl){
       audioMeta = {dalilId:d.id, isManual:true, current:1, ayahEnd:1};
       audioEl = playableAudio(manualUrl);
       audioEl.addEventListener('ended', ()=>{ btn.innerHTML = `${ICON.play} Main semula`; });
@@ -1374,6 +1411,7 @@ async function startPlayback(d){
 function wireSequentialEnded(dalilId, btn){
   audioEl.addEventListener('ended', async function playNext(){
     if(!audioMeta || audioMeta.dalilId!==dalilId) return;
+    if(loopIsOn()) return; // mod ulang bahagian: kekal pada ayat ini
     audioMeta.current++;
     if(audioMeta.current > audioMeta.ayahEnd){
       btn.innerHTML = `${ICON.play} Main semula`;
@@ -1390,6 +1428,108 @@ function wireSequentialEnded(dalilId, btn){
     }
   });
 }
+
+
+/* ============================================================
+   PENGULANG BAHAGIAN (A–B loop) + KELAJUAN — untuk pelajar ulang
+   perkataan/bahagian yang tak jelas pada bacaan qari / pensyarah
+   ============================================================ */
+const loopState = {a:0, b:1, on:false, rate:1, key:'', boundEl:null};
+function loopIsOn(){ return loopState.on; }
+function fmtT(sec){ if(!isFinite(sec)) return '0:00.0'; const m=Math.floor(sec/60); const r=(sec-m*60).toFixed(1).padStart(4,'0'); return m+':'+r; }
+
+function initLoopPanel(){
+  loopState.on = false; loopState.a = 0; loopState.b = 1; loopState.key = ''; loopState.boundEl = null;
+  const panel = document.getElementById('loopPanel');
+  if(!panel) return;
+  const track = document.getElementById('loopTrack');
+  const handles = {a: document.getElementById('loopA'), b: document.getElementById('loopB')};
+  const toggle = document.getElementById('loopToggle');
+
+  Object.keys(handles).forEach(k=>{
+    const h = handles[k];
+    h.addEventListener('pointerdown', e=>{ h.setPointerCapture(e.pointerId); h._drag = true; e.preventDefault(); });
+    h.addEventListener('pointermove', e=>{
+      if(!h._drag) return;
+      const r = track.getBoundingClientRect();
+      let f = (e.clientX - r.left) / r.width;
+      f = Math.max(0, Math.min(1, f));
+      const gap = 0.03;
+      if(k==='a') loopState.a = Math.min(f, loopState.b - gap);
+      else        loopState.b = Math.max(f, loopState.a + gap);
+      loopState.a = Math.max(0, loopState.a); loopState.b = Math.min(1, loopState.b);
+      if(loopState.on && audioEl && isFinite(audioEl.duration)){
+        const t = audioEl.currentTime / audioEl.duration;
+        if(t < loopState.a || t > loopState.b) audioEl.currentTime = loopState.a * audioEl.duration;
+      }
+      renderLoop();
+    });
+    const end = ()=>{ h._drag = false; };
+    h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end);
+  });
+
+  toggle.onclick = ()=>{
+    loopState.on = !loopState.on;
+    toggle.classList.toggle('on', loopState.on);
+    toggle.innerHTML = loopState.on ? '⏹ Berhenti ulang' : '🔁 Ulang bahagian';
+    if(loopState.on && audioEl && isFinite(audioEl.duration)){
+      audioEl.currentTime = loopState.a * audioEl.duration;
+      if(audioEl.paused){ audioEl.play().catch(()=>{}); const pb=document.getElementById('playBtn'); if(pb) pb.innerHTML = `${ICON.pause} Jeda`; }
+    }
+  };
+  panel.querySelectorAll('.speed').forEach(b=>{
+    b.onclick = ()=>{
+      loopState.rate = parseFloat(b.getAttribute('data-rate'));
+      panel.querySelectorAll('.speed').forEach(x=>x.classList.toggle('on', x===b));
+      if(audioEl) audioEl.playbackRate = loopState.rate;
+    };
+  });
+  renderLoop();
+}
+
+function renderLoop(){
+  const panel = document.getElementById('loopPanel');
+  if(!panel) return;
+  const track = document.getElementById('loopTrack');
+  const w = track.clientWidth;
+  document.getElementById('loopA').style.left = (loopState.a*w)+'px';
+  document.getElementById('loopB').style.left = (loopState.b*w)+'px';
+  const sel = document.getElementById('loopSel');
+  sel.style.left = (loopState.a*w)+'px'; sel.style.width = ((loopState.b-loopState.a)*w)+'px';
+  const dur = audioEl && isFinite(audioEl.duration) ? audioEl.duration : 0;
+  document.getElementById('loopTimes').textContent = dur ? `${fmtT(loopState.a*dur)} – ${fmtT(loopState.b*dur)}` : '';
+}
+
+// Ticker ringan: sambung ke elemen audio semasa, kekalkan julat, laksanakan ulangan
+setInterval(()=>{
+  const panel = document.getElementById('loopPanel');
+  const overlayOpen = document.getElementById('overlay').classList.contains('open');
+  if(!panel || !overlayOpen) return;
+  const hasAudio = audioEl && audioMeta && audioMeta.dalilId === currentDalilId;
+  panel.classList.toggle('show', !!hasAudio);
+  if(!hasAudio) return;
+
+  // elemen audio baharu (ayat baharu / main semula)?
+  if(loopState.boundEl !== audioEl){
+    const key = audioMeta.dalilId + ':' + audioMeta.current;
+    if(key !== loopState.key){ loopState.a = 0; loopState.b = 1; loopState.key = key; }
+    loopState.boundEl = audioEl;
+    audioEl.playbackRate = loopState.rate;
+    audioEl.addEventListener('ended', ()=>{
+      if(loopState.on && audioEl === loopState.boundEl && isFinite(audioEl.duration)){
+        audioEl.currentTime = loopState.a * audioEl.duration;
+        audioEl.play().catch(()=>{});
+      }
+    });
+  }
+  const dur = audioEl.duration;
+  if(!isFinite(dur) || dur <= 0) return;
+  if(loopState.on && !audioEl.paused && audioEl.currentTime >= loopState.b*dur - 0.04){
+    audioEl.currentTime = loopState.a * dur;
+  }
+  document.getElementById('loopPos').style.left = ((audioEl.currentTime/dur) * document.getElementById('loopTrack').clientWidth) + 'px';
+  renderLoop();
+}, 80);
 
 /* ---- normalisasi & skor ---- */
 function normalizeArabic(s){
@@ -1703,7 +1843,7 @@ let openAudioEditor = null;    // dalilId sedang dibuka
 
 function renderAudioManagerList(){
   const wrap = document.getElementById('audioManagerList');
-  const noAudioDalil = DALIL.filter(d=>d.noAudio || d.type==='hadith');
+  const noAudioDalil = DALIL.filter(d=>d.noAudio || d.type==='hadith' || MANUAL_AUDIO[d.id]);
   wrap.innerHTML = noAudioDalil.map(d=>{
     const has = !!MANUAL_AUDIO[d.id];
     return `
