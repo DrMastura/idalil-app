@@ -9,7 +9,7 @@
    - Audio qari & pensyarah disimpan oleh halaman sendiri dalam cache
      'idalil-audio-v1' — service worker ini tidak memadamnya.
    ============================================================ */
-const SHELL_CACHE = 'idalil-shell-v1';
+const SHELL_CACHE = 'idalil-shell-v2';
 const FONT_CACHE  = 'idalil-fonts-v1';
 const KEEP = [SHELL_CACHE, FONT_CACHE, 'idalil-audio-v1'];
 const SHELL = ['./idalil-v3.html', './manifest-idalil.json', './icon-192.png', './icon-512.png'];
