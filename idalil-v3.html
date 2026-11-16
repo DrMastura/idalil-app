@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>i-DALIL — Pendidikan Islam Matrikulasi</title>
+<!-- PWA: membolehkan i-DALIL dipasang di telefon & digunakan tanpa internet -->
+<link rel="manifest" href="manifest-idalil.json">
+<meta name="theme-color" content="#161634">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="i-DALIL">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Amiri+Quran&family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -324,6 +331,45 @@
   .tj-chip{display:inline-block;font-size:10.5px;background:#eef4ff;color:#2F5FD6;border-radius:8px;padding:1px 6px;margin:1px 2px 1px 0;}
   .rd-note{font-size:11px;color:#7c7256;margin-top:8px;line-height:1.5;}
   .access-error{font-size:11.5px;color:var(--bad);min-height:16px;margin-top:10px;}
+
+  /* ============ MOD LUAR TALIAN (PWA) ============ */
+  .offline-bar{padding:10px 16px;margin-bottom:16px;}
+  .ob-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px;color:#3c362a;}
+  .ob-row .btn{padding:7px 12px;font-size:12px;}
+  .ob-status{font-weight:600;padding:3px 10px;border-radius:20px;font-size:11.5px;white-space:nowrap;}
+  .ob-status.on{background:var(--good-bg);color:var(--good);}
+  .ob-status.off{background:var(--bad-bg);color:var(--bad);}
+  .ob-item b{color:var(--ink-2);}
+  .ob-pending{color:var(--mid);font-weight:600;}
+  .ob-ready{color:var(--good);font-weight:600;}
+  .ob-note{font-size:11px;color:#8a7d55;margin-top:6px;line-height:1.5;}
+  .ob-msg{font-size:11.5px;margin-top:6px;color:var(--ink-2);font-weight:500;}
+  .ob-msg:empty{display:none;}
+
+  /* ============ MOD DENGAR–ULANG–BANDING ============ */
+  #bandBtn.on{background:var(--ink-2);color:#fff;border-color:var(--ink-2);}
+  .band-panel{display:none;margin:0 0 14px;padding:14px 16px;border:1.5px solid var(--gold);border-radius:14px;background:linear-gradient(160deg,#fffaf0,var(--parchment-2));}
+  .band-panel.show{display:block;}
+  .band-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-weight:600;font-size:13.5px;color:var(--ink);}
+  .band-off{font-size:10.5px;font-weight:600;background:var(--ink-2);color:var(--gold-2);padding:2px 9px;border-radius:20px;}
+  .band-hint{font-size:11.5px;color:#7c7256;margin:4px 0 12px;line-height:1.5;}
+  .band-ayah{font-size:12px;margin-bottom:10px;color:#5c5334;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .band-ayah select{padding:6px 10px;border-radius:8px;border:1.5px solid var(--line);font-family:'Jost';font-size:12px;background:#fff;}
+  .band-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  @media (max-width:560px){.band-steps{grid-template-columns:1fr;}}
+  .band-step{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:7px;}
+  .bs-top{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--ink-2);}
+  .bs-num{width:22px;height:22px;border-radius:50%;background:var(--ink-2);color:var(--gold-2);display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;flex-shrink:0;}
+  .band-step .btn{justify-content:center;padding:8px 10px;font-size:12.5px;}
+  .bs-sub{font-size:10.5px;color:#8a7d55;text-align:center;line-height:1.4;}
+  .band-now{font-size:12px;color:var(--rose);margin-top:10px;}
+  .band-now:empty{display:none;}
+  .band-rate{margin-top:10px;background:#fff;border:1px dashed var(--gold);border-radius:10px;padding:10px 12px;}
+  .bs-q{font-size:12px;font-weight:600;margin-bottom:8px;color:var(--ink-2);}
+  .band-rate-btns{display:flex;gap:8px;flex-wrap:wrap;}
+  .band-rate-btns .btn{padding:7px 11px;font-size:12px;}
+  .band-last{font-size:11.5px;color:#5c5334;margin-top:8px;line-height:1.5;}
+  .band-last:empty{display:none;}
 </style>
 </head>
 <body>
@@ -703,15 +749,31 @@ function groupFlatRecords(rows){
   });
 }
 let MANUAL_AUDIO = {}; // dalilId -> URL bacaan rujukan yang dimuat naik pensyarah
+let BACKEND_FROM_CACHE = false; // true = data dipaparkan daripada salinan dalam peranti (luar talian)
+function backendResult(json){
+  MANUAL_AUDIO = json.manualAudio || {};
+  // rekod yang belum sempat dihantar (luar talian) turut dikira supaya kemajuan pelajar tidak "hilang"
+  return {records: groupFlatRecords([...(json.records||[]), ...pendingAsRows()]), semester: json.semester || 'Sesi Semasa (belum ditetapkan)'};
+}
 async function fetchBackend(){
   try{
-    const res = await fetch(SCRIPT_URL + '?key=' + encodeURIComponent(BACKEND_KEY));
+    if(navigator.onLine === false) throw new Error('Peranti luar talian');
+    const ctrl = ('AbortController' in window) ? new AbortController() : null;
+    const t = ctrl ? setTimeout(()=>ctrl.abort(), 20000) : null;
+    const res = await fetch(SCRIPT_URL + '?key=' + encodeURIComponent(BACKEND_KEY), ctrl ? {signal: ctrl.signal} : undefined);
     const json = await res.json();
-    MANUAL_AUDIO = json.manualAudio || {};
-    return {records: groupFlatRecords(json.records), semester: json.semester || 'Sesi Semasa (belum ditetapkan)'};
+    if(t) clearTimeout(t);
+    saveBackendCache(json);
+    BACKEND_FROM_CACHE = false;
+    return backendResult(json);
   }catch(e){
     console.warn('Tidak dapat hubungi Google Sheets:', e);
-    return {records: [], semester: 'Sesi Semasa (belum ditetapkan)'};
+    BACKEND_FROM_CACHE = true;
+    const cached = loadBackendCache();
+    if(cached) return backendResult(cached);
+    let lastSem = '';
+    try{ lastSem = localStorage.getItem(LAST_SEM_KEY) || ''; }catch(_){}
+    return {records: groupFlatRecords(pendingAsRows()), semester: lastSem || 'Sesi Semasa (belum ditetapkan)'};
   }
 }
 async function uploadManualAudio(dalilId, blob, fileName, mimeType){
@@ -725,6 +787,198 @@ async function uploadManualAudio(dalilId, blob, fileName, mimeType){
     action:'uploadAudio', dalilId, fileData: base64, mimeType, fileName, key: BACKEND_KEY
   })});
   return await res.json();
+}
+
+/* ============================================================
+   MOD LUAR TALIAN (PWA)
+   - Audio qari & bacaan rujukan pensyarah disimpan dalam peranti
+     (Cache Storage) supaya boleh didengar tanpa internet.
+   - Salinan data terakhir dari Google Sheets disimpan (localStorage)
+     supaya kemajuan pelajar tetap kelihatan semasa luar talian.
+   - Rekod skor yang gagal dihantar dibariskan dan disegerakkan
+     secara automatik ke Google Sheets apabila internet kembali.
+   ============================================================ */
+const OFFLINE_AUDIO_CACHE = 'idalil-audio-v1';
+const OFFLINE_KEY_BASE = location.origin + location.pathname.replace(/[^/]*$/, '') + '__idalil_offline__/';
+const PENDING_KEY = 'idalil-pending-sync';
+const BACKEND_CACHE_KEY = 'idalil-backend-cache';
+const LAST_SEM_KEY = 'idalil-last-semester';
+const offlineBlobUrls = {}; // kunci cache -> blob URL (elak cipta berulang kali)
+
+function cachesOk(){ try{ return 'caches' in window && window.isSecureContext !== false; }catch(e){ return false; } }
+function offlineKey(kind, id){ return OFFLINE_KEY_BASE + kind + '-' + encodeURIComponent(id); }
+
+async function getOfflineAudioUrl(kind, id){
+  const k = offlineKey(kind, id);
+  if(offlineBlobUrls[k]) return offlineBlobUrls[k];
+  if(!cachesOk()) return null;
+  try{
+    const c = await caches.open(OFFLINE_AUDIO_CACHE);
+    const r = await c.match(k);
+    if(!r) return null;
+    const blob = await r.blob();
+    if(!blob.size) return null;
+    offlineBlobUrls[k] = URL.createObjectURL(blob);
+    return offlineBlobUrls[k];
+  }catch(e){ return null; }
+}
+async function putOfflineAudio(kind, id, blob){
+  if(!cachesOk() || !blob || !blob.size) return false;
+  try{
+    const c = await caches.open(OFFLINE_AUDIO_CACHE);
+    await c.put(offlineKey(kind, id), new Response(blob, {headers:{'Content-Type': blob.type || 'audio/mpeg'}}));
+    return true;
+  }catch(e){ console.warn('Gagal simpan audio dalam peranti', e); return false; }
+}
+/* Senarai audio yang diperlukan untuk luar talian (ikut logik main audio sedia ada:
+   bacaan rujukan pensyarah diutamakan, jika tiada → audio qari setiap ayat) */
+function offlineAudioPlan(){
+  const items = [];
+  DALIL.forEach(d=>{
+    const manualUrl = MANUAL_AUDIO[d.id];
+    if(manualUrl){
+      const fid = driveIdOf(manualUrl);
+      if(fid) items.push({kind:'manual', id:fid, url:manualUrl});
+    } else if(d.type==='quran' && !d.noAudio){
+      for(let a=d.ayah; a<=(d.ayahEnd||d.ayah); a++) items.push({kind:'qari', id:`${d.surah}-${a}`, surah:d.surah, ayah:a});
+    }
+  });
+  return items;
+}
+async function offlineAudioStatus(){
+  const plan = offlineAudioPlan();
+  let have = 0;
+  if(cachesOk()){
+    try{
+      const c = await caches.open(OFFLINE_AUDIO_CACHE);
+      const keys = new Set((await c.keys()).map(r=>r.url));
+      plan.forEach(it=>{ if(keys.has(offlineKey(it.kind, it.id))){ it.have = true; have++; } });
+    }catch(e){}
+  }
+  return {total: plan.length, have, plan};
+}
+
+let offlineDownloading = false;
+async function downloadOfflineAudio(){
+  if(offlineDownloading) return;
+  if(navigator.onLine === false){ renderOfflineBar('⚠️ Sambung ke internet (cth. Wi-Fi kolej) dahulu untuk simpan audio.'); return; }
+  offlineDownloading = true;
+  try{ if(navigator.storage && navigator.storage.persist) await navigator.storage.persist(); }catch(e){}
+  const st = await offlineAudioStatus();
+  const todo = st.plan.filter(it=>!it.have);
+  let done = st.have, failed = 0;
+  for(const it of todo){
+    setOfflineDlLabel(`⏳ Menyimpan audio ${done+failed+1}/${st.total}…`);
+    try{
+      let blob;
+      if(it.kind==='qari'){
+        const res = await fetch(`https://api.alquran.cloud/v1/ayah/${it.surah}:${it.ayah}/ar.alafasy`);
+        const json = await res.json();
+        const ar = await fetch(json.data.audio);
+        if(!ar.ok) throw new Error('HTTP '+ar.status);
+        blob = await ar.blob();
+      } else {
+        blob = await fetchManualAudioBlob(it.id);
+      }
+      if(await putOfflineAudio(it.kind, it.id, blob)) done++; else failed++;
+    }catch(e){ failed++; console.warn('Gagal simpan audio', it, e); }
+  }
+  offlineDownloading = false;
+  renderOfflineBar(failed
+    ? `⚠️ ${done}/${st.total} audio tersimpan, ${failed} gagal. Tekan butang sekali lagi untuk cuba semula.`
+    : `✅ Semua ${st.total} audio rujukan kini tersimpan dalam peranti — boleh didengar tanpa internet.`);
+}
+function setOfflineDlLabel(txt){ const b = document.getElementById('offlineDlBtn'); if(b){ b.disabled = true; b.textContent = txt; } }
+
+/* ---- salinan data Google Sheets dalam peranti ---- */
+function saveBackendCache(json){
+  if(!json || !Array.isArray(json.records)) return; // jangan tindih salinan baik dengan respons ralat
+  try{ if(json.semester) localStorage.setItem(LAST_SEM_KEY, json.semester); }catch(e){}
+  try{ localStorage.setItem(BACKEND_CACHE_KEY, JSON.stringify(json)); }
+  catch(e){
+    // ruang penuh: simpan rekod pelajar peranti ini sahaja
+    try{
+      const m = (localStorage.getItem('idalil-student-matric')||'').toUpperCase();
+      const slim = Object.assign({}, json, {records: json.records.filter(r=> m && String(r.Matrik||'').toUpperCase()===m)});
+      localStorage.setItem(BACKEND_CACHE_KEY, JSON.stringify(slim));
+    }catch(e2){}
+  }
+}
+function loadBackendCache(){ try{ return JSON.parse(localStorage.getItem(BACKEND_CACHE_KEY)||'null'); }catch(e){ return null; } }
+
+/* ---- baris gilir rekod skor yang belum dihantar ---- */
+function readPending(){ try{ const l = JSON.parse(localStorage.getItem(PENDING_KEY)||'[]'); return Array.isArray(l) ? l : []; }catch(e){ return []; } }
+function writePending(list){ try{ localStorage.setItem(PENDING_KEY, JSON.stringify(list)); }catch(e){} }
+function queuePending(payload){
+  const l = readPending();
+  l.push(Object.assign({_qid: Date.now()+'-'+Math.random().toString(36).slice(2,8)}, payload));
+  writePending(l);
+  renderOfflineBar('📥 Rekod skor disimpan dalam peranti — akan dihantar ke Google Sheets secara automatik bila ada internet.');
+}
+function pendingAsRows(){
+  return readPending().map(p=>({Sesi:p.sesi, Pelajar:p.pelajar, Matrik:p.matrik, Kelas:p.kelas, DalilID:p.dalilId, Tajuk:p.tajuk, Skor:p.skor, TarikhMasa:p.masa}));
+}
+let syncingPending = false;
+async function flushPendingSync(){
+  if(syncingPending || navigator.onLine === false) return;
+  if(!readPending().length) return;
+  syncingPending = true;
+  let sent = 0;
+  while(true){
+    const item = readPending()[0];
+    if(!item) break;
+    const {_qid, ...payload} = item; // hantar data yang sama seperti biasa (tanpa id dalaman)
+    try{
+      await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)});
+      writePending(readPending().filter(x=>x._qid !== _qid));
+      sent++;
+    }catch(e){ break; }
+  }
+  syncingPending = false;
+  if(sent) renderOfflineBar(`☁️ ${sent} rekod luar talian berjaya disegerakkan ke Google Sheets.`);
+  else renderOfflineBar();
+}
+
+/* ---- jalur status luar talian (paparan pelajar) ---- */
+let deferredInstallPrompt = null;
+let offlineBarMsg = '';
+async function renderOfflineBar(msg){
+  if(msg !== undefined) offlineBarMsg = msg;
+  if(!document.getElementById('offlineBar')) return;
+  const st = await offlineAudioStatus();
+  const bar = document.getElementById('offlineBar');
+  if(!bar) return;
+  const online = navigator.onLine !== false;
+  const pending = readPending().length;
+  const canStore = cachesOk();
+  bar.innerHTML = `
+    <div class="ob-row">
+      <span class="ob-status ${online?'on':'off'}">${online?'🟢 Dalam talian':'🔴 Luar talian'}</span>
+      <span class="ob-item">🎧 Audio dalam peranti: <b>${st.have}/${st.total}</b></span>
+      ${pending ? `<span class="ob-item ob-pending">⏳ ${pending} rekod menunggu segerak</span>` : ''}
+      <span style="flex:1"></span>
+      ${!canStore ? `<span class="ob-item">Pelayar ini tidak menyokong simpanan audio luar talian</span>`
+        : st.have < st.total
+          ? `<button class="btn ghost" id="offlineDlBtn" ${offlineDownloading?'disabled':''}>${ICON.download} ${offlineDownloading?'⏳ Sedang menyimpan…':'Simpan audio untuk luar talian'}</button>`
+          : `<span class="ob-item ob-ready">✅ Sedia digunakan tanpa internet</span>`}
+      ${pending && online ? `<button class="btn ghost" id="syncNowBtn">☁️ Segerak sekarang</button>` : ''}
+      ${deferredInstallPrompt ? `<button class="btn gold" id="installBtn">📲 Pasang i-DALIL</button>` : ''}
+    </div>
+    <div class="ob-note">${online
+      ? 'Tekan <b>Simpan audio untuk luar talian</b> sekali semasa ada Wi-Fi. Selepas itu bacaan qari boleh didengar di asrama tanpa internet, dan rekod skor yang gagal dihantar akan disegerakkan sendiri.'
+      : 'Tanpa internet anda masih boleh dengar audio yang tersimpan dan berlatih dengan mod <b>🎧 Dengar–Ulang–Banding</b>. Semakan skor automatik (butang merah) memerlukan internet.'}</div>
+    <div class="ob-msg">${offlineBarMsg||''}</div>
+  `;
+  const dl = document.getElementById('offlineDlBtn');
+  if(dl) dl.onclick = downloadOfflineAudio;
+  const sy = document.getElementById('syncNowBtn');
+  if(sy) sy.onclick = ()=>{ sy.disabled = true; flushPendingSync(); };
+  const ib = document.getElementById('installBtn');
+  if(ib) ib.onclick = async ()=>{
+    const p = deferredInstallPrompt; deferredInstallPrompt = null;
+    try{ p.prompt(); await p.userChoice; }catch(e){}
+    renderOfflineBar();
+  };
 }
 
 /* ============================================================
@@ -795,6 +1049,7 @@ async function renderStudentView(){
   root.innerHTML = `
     <div class="session-tag">${ICON.layers} Sesi semasa: <b>${CURRENT_SEMESTER}</b></div>
     <div class="panel namebar" id="namebar"></div>
+    <div class="panel offline-bar" id="offlineBar"></div>
     <div class="layout">
       <aside class="panel sidebar">
         <h2>Tajuk RPS</h2>
@@ -812,8 +1067,10 @@ async function renderStudentView(){
     </div>
   `;
   renderNamebar();
+  renderOfflineBar();
   await loadStudentProgress();
   renderNamebar();
+  renderOfflineBar();
   renderTopicTree();
   renderResults();
   document.getElementById('searchBox').addEventListener('input', renderResults);
@@ -1216,7 +1473,10 @@ function openModal(id){
             ? `<span class="note" style="margin:0;">Audio rujukan belum dimuat naik oleh pensyarah untuk hadith ini — fokus kepada latihan sebutan.</span>`
             : `<span class="note" style="margin:0;">⚠️ Potongan ayat ini sebahagian sahaja daripada ayat penuh, jadi audio qari (yang membaca ayat penuh) tidak dipaparkan di sini supaya tidak mengelirukan. Pensyarah boleh sediakan bacaan rujukan sendiri melalui Papan Pantau.</span>`}
       <button class="btn rec" id="recBtn">${ICON.mic} Rakam bacaan saya</button>
+      ${bandHasReference(d) ? `<button class="btn ghost" id="bandBtn">🎧 Dengar–Ulang–Banding</button>` : ''}
     </div>
+
+    ${bandHasReference(d) ? `<div class="band-panel" id="bandPanel"></div>` : ''}
 
     <div class="loop-panel" id="loopPanel">
       <div class="loop-head"><span>🔁 Ulang bahagian yang tak jelas</span><span id="loopTimes"></span></div>
@@ -1249,9 +1509,11 @@ function openModal(id){
   const tajweedBtn = document.getElementById('tajweedBtn');
   if(tajweedBtn) tajweedBtn.onclick = ()=> toggleTajweedView(d);
   document.getElementById('recBtn').onclick = ()=> toggleRecord(d);
+  initBandingPanel(d);
   document.getElementById('overlay').classList.add('open');
 }
 function closeModal(){
+  stopBanding(); // mod Dengar–Ulang–Banding: henti audio & padam rakaman sementara
   document.getElementById('overlay').classList.remove('open');
   if(recState) recState.userStopped = true; // elak rakaman bersambung selepas tetingkap ditutup
   if(recognizer){ try{recognizer.stop();}catch(e){} }
@@ -1407,17 +1669,25 @@ async function toggleTajweedView(d){
 /* ---- audio pensyarah: ambil melalui Google Apps Script (lebih pasti daripada pautan Drive terus) ---- */
 const MANUAL_BLOB_CACHE = {}; // fileId -> blob URL
 function driveIdOf(url){ const m = /[?&]id=([^&]+)/.exec(url || ''); return m ? m[1] : null; }
-async function manualAudioBlobUrl(url){
-  const id = driveIdOf(url);
-  if(!id) return url;
-  if(MANUAL_BLOB_CACHE[id]) return MANUAL_BLOB_CACHE[id];
+async function fetchManualAudioBlob(id){
   const res = await fetch(SCRIPT_URL + '?key=' + encodeURIComponent(BACKEND_KEY) + '&audioId=' + encodeURIComponent(id));
   const json = await res.json();
   if(!json || !json.ok || !json.data) throw new Error((json && json.error) || 'Audio tidak diterima');
   const bin = atob(json.data);
   const bytes = new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
-  const blobUrl = URL.createObjectURL(new Blob([bytes], {type: json.mime || 'audio/mpeg'}));
+  return new Blob([bytes], {type: json.mime || 'audio/mpeg'});
+}
+async function manualAudioBlobUrl(url){
+  const id = driveIdOf(url);
+  if(!id) return url;
+  if(MANUAL_BLOB_CACHE[id]) return MANUAL_BLOB_CACHE[id];
+  // mod luar talian: guna salinan dalam peranti jika ada
+  const offlineUrl = await getOfflineAudioUrl('manual', id);
+  if(offlineUrl){ MANUAL_BLOB_CACHE[id] = offlineUrl; return offlineUrl; }
+  const blob = await fetchManualAudioBlob(id);
+  putOfflineAudio('manual', id, blob).then(()=>renderOfflineBar()); // simpan senyap untuk luar talian (tiada data tambahan)
+  const blobUrl = URL.createObjectURL(blob);
   MANUAL_BLOB_CACHE[id] = blobUrl;
   return blobUrl;
 }
@@ -1441,12 +1711,16 @@ function playableAudio(url){
 let audioMeta = null; // {dalilId, isManual, surah, current, ayahEnd}
 
 async function fetchAyahAudioUrl(surah, ayah){
+  // mod luar talian: jika audio ayat ini sudah disimpan dalam peranti, main terus dari situ
+  const offlineUrl = await getOfflineAudioUrl('qari', `${surah}-${ayah}`);
+  if(offlineUrl) return offlineUrl;
   const res = await fetch(`https://api.alquran.cloud/v1/ayah/${surah}:${ayah}/ar.alafasy`);
   const json = await res.json();
   return json.data.audio;
 }
 
 function handlePlayPauseClick(d){
+  bandStopAudio(); // elak dua audio bertindih dengan mod Banding
   const btn = document.getElementById('playBtn');
   if(audioEl && audioMeta && audioMeta.dalilId===d.id && !audioEl.ended){
     if(!audioEl.paused){
@@ -1759,6 +2033,9 @@ function toggleRecord(d){
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   const recBtn = document.getElementById('recBtn');
   const fb = document.getElementById('feedbackBox');
+  // elak dua perakam berebut mikrofon: hentikan rakaman mod Banding & audionya dahulu
+  bandStopAudio();
+  if(bandState.recorder && bandState.recorder.state === 'recording'){ try{ bandState.recorder.stop(); }catch(e){} }
   if(!SpeechRec){
     fb.className='feedback show';
     fb.innerHTML = `<div class="verdict">Pengecaman suara tidak disokong pada pelayar ini. Cuba guna Google Chrome di desktop atau Android.</div>`;
@@ -1875,6 +2152,292 @@ function showFeedback(heard, score, al, d){
 }
 
 /* ============================================================
+   MOD DENGAR–ULANG–BANDING
+   1) Dengar bacaan rujukan (qari / pensyarah)
+   2) Rakam bacaan sendiri (MediaRecorder — berfungsi tanpa internet)
+   3) Main berturut-turut: rujukan → bacaan sendiri, untuk penilaian kendiri
+   Rakaman pelajar TIDAK dihantar ke mana-mana; ia hanya wujud sementara
+   dalam memori peranti dan dipadam apabila tetingkap dalil ditutup.
+   ============================================================ */
+const bandState = {dalilId:null, recorder:null, stream:null, chunks:[], blobUrl:null, recDur:0, recStart:0, timer:null,
+                   audio:null, playing:null, seq:0, ayah:'all'};
+const BAND_MAX_MS = 3*60*1000;
+
+function bandHasReference(d){
+  // sama seperti syarat butang "Dengar bacaan" sedia ada
+  return (d.type==='quran' && (!d.noAudio || !!MANUAL_AUDIO[d.id])) || (d.type==='hadith' && !!MANUAL_AUDIO[d.id]);
+}
+function fmtDur(sec){ sec = Math.max(0, Math.round(sec||0)); return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0'); }
+function bandSleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+function bandSetNow(html){ const el = document.getElementById('bandNow'); if(el) el.innerHTML = html||''; }
+
+function pauseMainAudio(){
+  if(audioEl && !audioEl.paused){
+    try{ audioEl.pause(); }catch(e){}
+    const pb = document.getElementById('playBtn');
+    if(pb) pb.innerHTML = `${ICON.play} Sambung`;
+  }
+}
+function bandStopAudio(){
+  bandState.seq++;
+  if(bandState.audio){ try{ bandState.audio.pause(); }catch(e){} }
+  bandState.audio = null;
+  const wasPlaying = bandState.playing;
+  bandState.playing = null;
+  if(wasPlaying){ bandSetNow(''); bandRefresh(); }
+}
+function bandDiscardRecording(){
+  if(bandState.blobUrl){ try{ URL.revokeObjectURL(bandState.blobUrl); }catch(e){} }
+  bandState.blobUrl = null; bandState.recDur = 0;
+}
+function stopBanding(){
+  bandStopAudio();
+  bandState.dalilId = null; // isyarat kepada onstop: abaikan rakaman (tetingkap ditutup)
+  if(bandState.recorder && bandState.recorder.state === 'recording'){ try{ bandState.recorder.stop(); }catch(e){} }
+  if(bandState.stream){ try{ bandState.stream.getTracks().forEach(t=>t.stop()); }catch(e){} }
+  clearInterval(bandState.timer);
+  bandState.recorder = null; bandState.stream = null;
+  bandDiscardRecording();
+}
+
+/* Senarai audio rujukan (dimuat satu demi satu bila tiba gilirannya) */
+function bandReferenceItems(d){
+  const manualUrl = MANUAL_AUDIO[d.id];
+  if(manualUrl){
+    return [{label:'Bacaan rujukan pensyarah', make: async ()=>{
+      try{ return new Audio(await manualAudioBlobUrl(manualUrl)); }
+      catch(e){ return playableAudio(manualUrl); }
+    }}];
+  }
+  const start = bandState.ayah==='all' ? d.ayah : Number(bandState.ayah);
+  const end   = bandState.ayah==='all' ? (d.ayahEnd||d.ayah) : Number(bandState.ayah);
+  const items = [];
+  for(let a=start; a<=end; a++){
+    items.push({label: end>start ? `Qari — ayat ${a} (${a-start+1}/${end-start+1})` : 'Bacaan qari', make: async ()=> new Audio(await fetchAyahAudioUrl(d.surah, a))});
+  }
+  return items;
+}
+function bandMineItem(){
+  return {label:'Bacaan anda', gapBefore:700, make: async ()=> new Audio(bandState.blobUrl)};
+}
+
+async function bandPlayQueue(items, mode, onDone){
+  bandStopAudio();
+  pauseMainAudio();
+  const my = bandState.seq;
+  bandState.playing = mode;
+  bandRefresh();
+  for(let i=0; i<items.length; i++){
+    if(my !== bandState.seq) return;
+    if(items[i].gapBefore){ bandSetNow('…'); await bandSleep(items[i].gapBefore); if(my !== bandState.seq) return; }
+    bandSetNow(`🔊 Sedang main: <b>${items[i].label}</b>`);
+    let a = null;
+    try{ a = await items[i].make(); }catch(e){ a = null; }
+    if(my !== bandState.seq) return;
+    const ok = a && await new Promise(resolve=>{
+      bandState.audio = a;
+      a.addEventListener('ended', ()=>resolve(true));
+      a.addEventListener('error', ()=>{ setTimeout(()=>{ if(a.error) resolve(false); }, 1500); }); // beri peluang pautan alternatif
+      a.play().catch(()=>resolve(false));
+    });
+    if(my !== bandState.seq) return;
+    if(!ok){
+      bandState.playing = null; bandState.audio = null; bandRefresh();
+      bandSetNow(navigator.onLine === false
+        ? '⚠️ Audio rujukan belum disimpan dalam peranti. Sambung ke internet dan tekan "Simpan audio untuk luar talian".'
+        : '⚠️ Audio tidak dapat dimainkan buat masa ini. Sila cuba lagi.');
+      return;
+    }
+  }
+  if(my !== bandState.seq) return;
+  bandState.audio = null; bandState.playing = null;
+  bandSetNow('');
+  bandRefresh();
+  if(onDone) onDone();
+}
+
+async function bandToggleRecord(d){
+  const info = document.getElementById('bandRecInfo');
+  if(bandState.recorder && bandState.recorder.state === 'recording'){ bandState.recorder.stop(); return; }
+  if(recState){ if(info) info.textContent = 'Hentikan dahulu "Rakam bacaan saya" (butang merah atas).'; return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
+    if(info) info.textContent = 'Pelayar ini tidak menyokong rakaman audio. Cuba Google Chrome / Safari terkini.';
+    return;
+  }
+  bandStopAudio(); pauseMainAudio();
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true}});
+    if(bandState.dalilId !== d.id){ stream.getTracks().forEach(t=>t.stop()); return; } // tetingkap ditutup semasa minta izin
+    const rec = new MediaRecorder(stream);
+    bandState.stream = stream; bandState.recorder = rec; bandState.chunks = [];
+    rec.ondataavailable = e=>{ if(e.data && e.data.size) bandState.chunks.push(e.data); };
+    rec.onstop = ()=>{
+      try{ stream.getTracks().forEach(t=>t.stop()); }catch(e){}
+      clearInterval(bandState.timer);
+      const blob = new Blob(bandState.chunks, {type: rec.mimeType || 'audio/webm'});
+      const dur = (Date.now() - bandState.recStart)/1000;
+      if(bandState.recorder === rec){ bandState.recorder = null; bandState.stream = null; }
+      if(bandState.dalilId !== d.id || !document.getElementById('bandPanel')) return; // tetingkap sudah ditutup
+      if(blob.size){
+        bandDiscardRecording();
+        bandState.blobUrl = URL.createObjectURL(blob);
+        bandState.recDur = dur;
+        const rb = document.getElementById('bandRate'); if(rb) rb.style.display = 'none';
+      }
+      bandRefresh();
+    };
+    rec.start();
+    bandState.recStart = Date.now();
+    clearInterval(bandState.timer);
+    bandState.timer = setInterval(()=>{
+      const el = document.getElementById('bandRecInfo');
+      const ms = Date.now() - bandState.recStart;
+      if(el) el.textContent = `⏺ Merakam… ${fmtDur(ms/1000)} (tekan sekali lagi untuk henti)`;
+      if(ms > BAND_MAX_MS && bandState.recorder && bandState.recorder.state==='recording') bandState.recorder.stop();
+    }, 250);
+    bandRefresh();
+  }catch(e){
+    if(info) info.textContent = 'Tidak dapat akses mikrofon. Benarkan mikrofon pada tetapan pelayar dan cuba lagi.';
+  }
+}
+
+function bandRefresh(){
+  const L = document.getElementById('bandListen'), R = document.getElementById('bandRec'),
+        C = document.getElementById('bandCompare'), M = document.getElementById('bandMine'),
+        info = document.getElementById('bandRecInfo');
+  if(!L || !R || !C || !M) return;
+  const recording = !!(bandState.recorder && bandState.recorder.state === 'recording');
+  const mode = bandState.playing;
+  L.innerHTML = mode==='listen' ? '⏹ Henti' : '▶ Dengar rujukan';
+  L.disabled = recording;
+  R.innerHTML = recording ? '⏹ Henti rakam' : (bandState.blobUrl ? '🎙 Rakam semula' : '🎙 Rakam bacaan saya');
+  R.classList.toggle('recording', recording);
+  C.innerHTML = mode==='compare' ? '⏹ Henti' : '⇄ Rujukan → Saya';
+  C.disabled = !bandState.blobUrl || recording;
+  M.innerHTML = mode==='mine' ? '⏹ Henti' : '▶ Saya sahaja';
+  M.disabled = !bandState.blobUrl || recording;
+  if(!recording && info) info.textContent = bandState.blobUrl ? `✔ Rakaman anda sedia (${fmtDur(bandState.recDur)})` : 'Belum dirakam';
+}
+
+/* ---- penilaian kendiri (disimpan dalam peranti sahaja) ---- */
+const BAND_RATE_LABEL = {sama:'✅ Hampir sama', sikit:'🟡 Ada sedikit beza', ulang:'🔁 Perlu ulang lagi'};
+function bandStoreKey(){ return 'idalil-banding-' + (studentMatric || 'tanpa-matrik'); }
+function bandReadStore(){ try{ return JSON.parse(localStorage.getItem(bandStoreKey())||'{}') || {}; }catch(e){ return {}; } }
+function bandSaveRating(dalilId, rating){
+  const s = bandReadStore();
+  const prev = s[dalilId] || {count:0};
+  s[dalilId] = {rating, ts: Date.now(), count: (prev.count||0) + 1};
+  try{ localStorage.setItem(bandStoreKey(), JSON.stringify(s)); }catch(e){}
+}
+function renderBandLast(d){
+  const el = document.getElementById('bandLast');
+  if(!el) return;
+  const r = bandReadStore()[d.id];
+  el.innerHTML = r ? `📝 Penilaian kendiri terakhir: <b>${BAND_RATE_LABEL[r.rating]||r.rating}</b> · ${r.count} kali banding · ${new Date(r.ts).toLocaleDateString('ms-MY')}` : '';
+}
+
+function initBandingPanel(d){
+  stopBanding();
+  bandState.ayah = 'all';
+  const btn = document.getElementById('bandBtn');
+  const panel = document.getElementById('bandPanel');
+  if(!btn || !panel) return;
+  bandState.dalilId = d.id;
+  btn.onclick = ()=>{
+    const show = !panel.classList.contains('show');
+    panel.classList.toggle('show', show);
+    btn.classList.toggle('on', show);
+    if(show && !panel.innerHTML) renderBandPanel(d);
+    if(show) panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+  };
+}
+
+function renderBandPanel(d){
+  const panel = document.getElementById('bandPanel');
+  if(!panel) return;
+  const multi = !MANUAL_AUDIO[d.id] && d.type==='quran' && d.ayahEnd && d.ayahEnd > d.ayah;
+  const ayahOpts = [];
+  if(multi) for(let a=d.ayah; a<=d.ayahEnd; a++) ayahOpts.push(`<option value="${a}">Ayat ${a} sahaja</option>`);
+  panel.innerHTML = `
+    <div class="band-head"><span>🎧 Mod Dengar–Ulang–Banding</span><span class="band-off">✈ boleh digunakan tanpa internet*</span></div>
+    <div class="band-hint">Dengar bacaan rujukan, rakam bacaan anda, kemudian dengar <b>kedua-duanya berturut-turut</b> untuk mengesan sendiri perbezaan sebutan, panjang mad dan dengung.</div>
+    ${multi ? `<div class="band-ayah">Bahagian untuk dibanding:
+        <select id="bandAyah"><option value="all">Semua ayat (${d.ayah}–${d.ayahEnd})</option>${ayahOpts.join('')}</select>
+        <span class="note" style="margin:0;">Ayat demi ayat lebih mudah untuk dibanding.</span></div>` : ''}
+    <div class="band-steps">
+      <div class="band-step">
+        <div class="bs-top"><span class="bs-num">1</span> Dengar</div>
+        <button class="btn gold" id="bandListen">▶ Dengar rujukan</button>
+        <div class="bs-sub">Dengar dengan teliti sambil lihat teks</div>
+      </div>
+      <div class="band-step">
+        <div class="bs-top"><span class="bs-num">2</span> Ulang</div>
+        <button class="btn rec" id="bandRec">🎙 Rakam bacaan saya</button>
+        <div class="bs-sub" id="bandRecInfo">Belum dirakam</div>
+      </div>
+      <div class="band-step">
+        <div class="bs-top"><span class="bs-num">3</span> Banding</div>
+        <button class="btn primary" id="bandCompare" disabled>⇄ Rujukan → Saya</button>
+        <button class="btn ghost" id="bandMine" disabled>▶ Saya sahaja</button>
+      </div>
+    </div>
+    <div class="band-now" id="bandNow"></div>
+    <div class="band-rate" id="bandRate" style="display:none;">
+      <div class="bs-q">Selepas mendengar kedua-duanya, bagaimana bacaan anda berbanding rujukan?</div>
+      <div class="band-rate-btns">
+        <button class="btn ghost" data-band-rate="sama">${BAND_RATE_LABEL.sama}</button>
+        <button class="btn ghost" data-band-rate="sikit">${BAND_RATE_LABEL.sikit}</button>
+        <button class="btn ghost" data-band-rate="ulang">${BAND_RATE_LABEL.ulang}</button>
+      </div>
+      <div class="note" id="bandRateTip" style="margin:8px 0 0;"></div>
+    </div>
+    <div class="band-last" id="bandLast"></div>
+    <p class="note" style="margin:8px 0 0;">🔒 Rakaman dalam mod ini hanya disimpan sementara dalam peranti anda — tidak dihantar ke mana-mana — dan dipadam apabila tetingkap ini ditutup.
+      *Untuk guna tanpa internet, simpan audio rujukan dahulu melalui butang <b>Simpan audio untuk luar talian</b>.</p>
+  `;
+
+  const ayahSel = document.getElementById('bandAyah');
+  if(ayahSel) ayahSel.onchange = ()=>{
+    bandState.ayah = ayahSel.value;
+    bandStopAudio(); bandDiscardRecording();
+    document.getElementById('bandRate').style.display = 'none';
+    bandSetNow(''); bandRefresh();
+  };
+  document.getElementById('bandListen').onclick = ()=>{
+    if(bandState.playing==='listen'){ bandStopAudio(); return; }
+    bandPlayQueue(bandReferenceItems(d), 'listen');
+  };
+  document.getElementById('bandRec').onclick = ()=> bandToggleRecord(d);
+  document.getElementById('bandMine').onclick = ()=>{
+    if(bandState.playing==='mine'){ bandStopAudio(); return; }
+    if(bandState.blobUrl) bandPlayQueue([{label:'Bacaan anda', make: async ()=> new Audio(bandState.blobUrl)}], 'mine');
+  };
+  document.getElementById('bandCompare').onclick = ()=>{
+    if(bandState.playing==='compare'){ bandStopAudio(); return; }
+    if(!bandState.blobUrl) return;
+    bandPlayQueue([...bandReferenceItems(d), bandMineItem()], 'compare', ()=>{
+      const rb = document.getElementById('bandRate');
+      if(rb){ rb.style.display = 'block'; document.getElementById('bandRateTip').textContent = ''; }
+    });
+  };
+  panel.querySelectorAll('[data-band-rate]').forEach(b=>{
+    b.onclick = ()=>{
+      const r = b.getAttribute('data-band-rate');
+      bandSaveRating(d.id, r);
+      renderBandLast(d);
+      const tip = document.getElementById('bandRateTip');
+      if(tip) tip.innerHTML = r==='sama'
+        ? '🌟 Bagus! Apabila ada internet, cuba <b>Rakam bacaan saya</b> (butang merah) untuk semakan skor ketepatan perkataan.'
+        : r==='sikit'
+          ? '👂 Pilih ayat tertentu atau guna <b>Ulang bahagian</b> &amp; kelajuan 0.75× pada bacaan rujukan, kemudian rakam semula.'
+          : '🔁 Dengar rujukan 2–3 kali dahulu, ikut perlahan-lahan, kemudian rakam semula.';
+    };
+  });
+  renderBandLast(d);
+  bandRefresh();
+}
+
+/* ============================================================
    7. SIMPAN KEMAJUAN (shared storage — dikongsi dengan pensyarah)
    ============================================================ */
 async function saveProgress(id, score){
@@ -1895,13 +2458,20 @@ async function saveProgress(id, score){
   if(document.getElementById('namebar')) renderNamebar();
 
   // hantar rekod sebenar ke Google Sheets
+  const payload = {
+    sesi: CURRENT_SEMESTER, pelajar: studentName, matrik: studentMatric, kelas: studentKelas, dalilId: id,
+    ref: dalil.ref, tajuk: dalil.topic, skor: score, masa: new Date(now).toISOString(),
+    key: BACKEND_KEY
+  };
+  // mod luar talian: jika tiada internet, simpan dalam peranti & hantar kemudian
+  if(navigator.onLine === false){ queuePending(payload); return; }
   try{
-    await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify({
-      sesi: CURRENT_SEMESTER, pelajar: studentName, matrik: studentMatric, kelas: studentKelas, dalilId: id,
-      ref: dalil.ref, tajuk: dalil.topic, skor: score, masa: new Date(now).toISOString(),
-      key: BACKEND_KEY
-    })});
-  }catch(e){ console.warn('Gagal hantar skor ke Google Sheets', e); }
+    await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)});
+    flushPendingSync(); // hantar juga rekod lama yang masih menunggu (jika ada)
+  }catch(e){
+    console.warn('Gagal hantar skor ke Google Sheets — disimpan untuk segerak kemudian', e);
+    queuePending(payload);
+  }
 }
 
 /* ============================================================
@@ -2345,6 +2915,21 @@ function initAccessGate(){
     const splash = document.getElementById('splashScreen');
     if(splash) splash.classList.add('hide');
   }, Math.max(0, minShow - elapsed));
+})();
+
+/* ============================================================
+   11. PWA — service worker, pasang ke skrin utama, segerak automatik
+   ============================================================ */
+(function initPWA(){
+  if('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')){
+    navigator.serviceWorker.register('sw-idalil.js').catch(e=>console.warn('Service worker tidak dapat didaftarkan:', e));
+  }
+  window.addEventListener('beforeinstallprompt', e=>{ e.preventDefault(); deferredInstallPrompt = e; renderOfflineBar(); });
+  window.addEventListener('appinstalled', ()=>{ deferredInstallPrompt = null; renderOfflineBar('📲 i-DALIL telah dipasang pada peranti ini.'); });
+  window.addEventListener('online',  ()=>{ renderOfflineBar(''); flushPendingSync(); });
+  window.addEventListener('offline', ()=>{ renderOfflineBar(''); });
+  setTimeout(flushPendingSync, 4000);            // cuba hantar rekod tertunggak selepas apps dibuka
+  setInterval(flushPendingSync, 2*60*1000);      // dan setiap 2 minit selagi apps terbuka
 })();
 </script>
 </body>

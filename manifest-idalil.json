@@ -1,0 +1,17 @@
+{
+  "name": "i-DALIL — Pendidikan Islam Matrikulasi",
+  "short_name": "i-DALIL",
+  "description": "Latihan & penilaian bacaan dalil WU001 / WM001 — Kolej Matrikulasi Kejuruteraan Johor",
+  "lang": "ms",
+  "start_url": "./idalil-v3.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#161634",
+  "theme_color": "#161634",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
