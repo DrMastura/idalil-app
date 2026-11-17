@@ -332,6 +332,18 @@
   .rd-note{font-size:11px;color:#7c7256;margin-top:8px;line-height:1.5;}
   .access-error{font-size:11.5px;color:var(--bad);min-height:16px;margin-top:10px;}
 
+  /* ============ KOTAK INPUT DALAM APLIKASI (ganti prompt) ============ */
+  .ask-overlay{position:fixed;inset:0;z-index:400;background:rgba(16,16,40,.62);display:flex;align-items:center;justify-content:center;padding:20px;}
+  .ask-box{background:var(--parchment);border:1.5px solid var(--gold);border-radius:16px;padding:20px 20px 16px;width:100%;max-width:380px;box-shadow:0 20px 50px rgba(0,0,0,.35);}
+  .ask-title{font-weight:700;font-size:16px;color:var(--ink);margin-bottom:6px;}
+  .ask-msg{font-size:13px;color:#5c5334;line-height:1.5;margin-bottom:12px;}
+  .ask-field{position:relative;}
+  .ask-input{width:100%;box-sizing:border-box;padding:12px 44px 12px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:16px;font-family:'Jost',sans-serif;background:#fff;}
+  .ask-input:focus{outline:none;border-color:var(--gold);}
+  .ask-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:none;font-size:18px;cursor:pointer;padding:6px;}
+  .ask-err{min-height:18px;font-size:12px;color:var(--bad);margin-top:6px;}
+  .ask-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:6px;}
+
   /* ============ MOD LUAR TALIAN (PWA) ============ */
   .offline-bar{padding:10px 16px;margin-bottom:16px;}
   .ob-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px;color:#3c362a;}
@@ -1070,15 +1082,64 @@ function renderRoleSwitch(){
     <button class="role-btn ${ROLE==='pensyarah'?'active':''}" id="btnPensyarah">${ICON.chart} Pensyarah</button>
   `;
   document.getElementById('btnPelajar').onclick = ()=>{ ROLE='pelajar'; renderAll(); };
-  document.getElementById('btnPensyarah').onclick = ()=>{
+  document.getElementById('btnPensyarah').onclick = async ()=>{
     if(sessionStorage.getItem('idalil-lecturer-ok') !== 'yes'){
-      const pin = prompt('Bahagian ini untuk pensyarah sahaja.\nSila masukkan PIN pensyarah:');
+      // kotak PIN dalam aplikasi (prompt() pelayar disekat dalam WhatsApp/Telegram & sesetengah Android)
+      const pin = await askText({
+        title: '🔒 Bahagian Pensyarah',
+        message: 'Bahagian ini untuk pensyarah sahaja. Sila masukkan PIN pensyarah:',
+        type: 'password', okLabel: 'Masuk',
+        validate: v => v.trim().toUpperCase() === LECTURER_PIN.toUpperCase() ? '' : 'PIN salah. Tekan 👁 untuk semak apa yang ditaip.'
+      });
       if(pin === null) return; // dibatalkan
-      if(pin.trim() !== LECTURER_PIN){ alert('PIN salah.'); return; }
       sessionStorage.setItem('idalil-lecturer-ok', 'yes');
     }
     ROLE='pensyarah'; renderAll();
   };
+}
+
+/* ---- kotak input dalam aplikasi (ganti prompt() pelayar) ----
+   Berfungsi dalam pelayar WhatsApp/Telegram, aplikasi PWA yang dipasang, Android & iPhone. */
+function askText(opt){
+  opt = opt || {};
+  return new Promise(resolve=>{
+    const ov = document.createElement('div');
+    ov.className = 'ask-overlay';
+    ov.innerHTML = `
+      <div class="ask-box" role="dialog" aria-modal="true">
+        <div class="ask-title">${opt.title||''}</div>
+        <div class="ask-msg">${opt.message||''}</div>
+        <div class="ask-field">
+          <input class="ask-input" type="${opt.type||'text'}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+          ${opt.type==='password' ? `<button type="button" class="ask-eye" aria-label="Tunjuk / sembunyi">👁</button>` : ''}
+        </div>
+        <div class="ask-err"></div>
+        <div class="ask-btns">
+          <button type="button" class="btn ghost" data-ask="no">Batal</button>
+          <button type="button" class="btn primary" data-ask="ok">${opt.okLabel||'OK'}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const input = ov.querySelector('.ask-input'), err = ov.querySelector('.ask-err');
+    input.value = opt.value || '';
+    input.placeholder = opt.placeholder || '';
+    const done = v => { document.removeEventListener('keydown', onKey); ov.remove(); resolve(v); };
+    const ok = ()=>{
+      const v = input.value;
+      if(opt.validate){ const m = opt.validate(v); if(m){ err.textContent = m; input.select(); return; } }
+      done(v);
+    };
+    const onKey = e => { if(e.key === 'Escape') done(null); };
+    document.addEventListener('keydown', onKey);
+    input.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); ok(); } });
+    input.addEventListener('input', ()=>{ err.textContent = ''; });
+    ov.querySelector('[data-ask="ok"]').onclick = ok;
+    ov.querySelector('[data-ask="no"]').onclick = ()=> done(null);
+    ov.addEventListener('click', e => { if(e.target === ov) done(null); });
+    const eye = ov.querySelector('.ask-eye');
+    if(eye) eye.onclick = ()=>{ input.type = input.type === 'password' ? 'text' : 'password'; input.focus(); };
+    setTimeout(()=> input.focus(), 50);
+  });
 }
 
 function renderAll(){
@@ -2782,7 +2843,12 @@ async function renderDashboard(){
     renderDashboard();
   };
   document.getElementById('newSessionBtn').onclick = async ()=>{
-    const label = prompt('Masukkan label sesi/semester baharu (cth: "2025/2026 - Semester 1"):', '');
+    const label = await askText({
+      title: '🗓 Sesi / semester baharu',
+      message: 'Masukkan label sesi/semester baharu (cth: "2025/2026 - Semester 1"):',
+      placeholder: 'cth: 2026/2027 - Semester 2', okLabel: 'Tetapkan',
+      validate: v => v.trim() ? '' : 'Sila isi label sesi.'
+    });
     if(!label || !label.trim()) return;
     await setCurrentSemester(label.trim());
     dashSemesterFilter = null; // kembali papar sesi semasa (yang baharu)
