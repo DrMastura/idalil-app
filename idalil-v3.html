@@ -752,27 +752,70 @@ function groupFlatRecords(rows){
 }
 let MANUAL_AUDIO = {}; // dalilId -> URL bacaan rujukan yang dimuat naik pensyarah
 let BACKEND_FROM_CACHE = false; // true = data dipaparkan daripada salinan dalam peranti (luar talian)
-function backendResult(json){
-  MANUAL_AUDIO = json.manualAudio || {};
-  // rekod yang belum sempat dihantar (luar talian) turut dikira supaya kemajuan pelajar tidak "hilang"
-  return {records: groupFlatRecords([...(json.records||[]), ...pendingAsRows()]), semester: json.semester || 'Sesi Semasa (belum ditetapkan)'};
+/* Backend VERSI 3 (Apps Script) menyimpan satu baris bagi setiap pelajar × dalil × sesi dalam
+   tab Kelas_XXX dan menyediakan 3 mod bacaan:
+     mode=config    → sesi semasa + audio pensyarah sahaja (ringan)
+     mode=pelajar   → rekod pelajar ini sahaja (laju walaupun data kelas bertambah)
+     mode=pensyarah → ringkasan semua kelas + rekod lama tab "Rekod"
+   Jika backend tidak menyokong mod (versi lama) atau mod gagal, aplikasi jatuh balik
+   ke cara asal (tanpa mod) secara automatik. */
+function summaryToRecords(summary){
+  return (summary||[]).filter(s=>s && s.DalilID).map(s=>{
+    const n = Math.min(500, Math.max(1, Number(s.BilCubaan)||1));
+    const t1 = Date.parse(s.PertamaPada) || Date.now();
+    const t2 = Date.parse(s.TerakhirPada) || t1;
+    const first = Number(s.SkorPertama)||0, last = Number(s.SkorTerakhir)||0;
+    const attempts = [];
+    for(let i=0;i<n;i++) attempts.push(i===0 ? {score:first, ts:t1} : i===n-1 ? {score:last, ts:t2} : {score:null, ts:t1});
+    return {studentName: s.Pelajar, matric: String(s.NoMatrik||'').toUpperCase(), kelas: s.Kelas||'', dalilId: s.DalilID,
+            topic: s.Tajuk, semester: s.Sesi, attempts, best: Math.max(Number(s.SkorTerbaik)||0, first, last), last};
+  });
 }
-async function fetchBackend(){
+function backendResult(json, mode){
+  MANUAL_AUDIO = json.manualAudio || {};
+  const flat = [...(json.records||[])];
+  // rekod yang belum sempat dihantar (luar talian) turut dikira supaya kemajuan pelajar tidak "hilang"
+  if(mode !== 'pensyarah') flat.push(...pendingAsRows());
+  const records = groupFlatRecords(flat).concat(summaryToRecords(json.summary));
+  return {records, semester: json.semester || 'Sesi Semasa (belum ditetapkan)'};
+}
+function backendUrl(params){
+  let u = SCRIPT_URL + '?key=' + encodeURIComponent(BACKEND_KEY);
+  Object.keys(params||{}).forEach(k=>{
+    const v = params[k];
+    if(v !== undefined && v !== null && v !== '') u += '&' + k + '=' + encodeURIComponent(v);
+  });
+  return u;
+}
+async function fetchJsonTimeout(url, ms){
+  const ctrl = ('AbortController' in window) ? new AbortController() : null;
+  const t = ctrl ? setTimeout(()=>ctrl.abort(), ms) : null;
+  try{
+    const res = await fetch(url, ctrl ? {signal: ctrl.signal} : undefined);
+    return await res.json();
+  } finally { if(t) clearTimeout(t); }
+}
+async function fetchBackend(mode, extra){
+  const params = Object.assign(mode ? {mode} : {}, extra||{});
+  const cacheKey = BACKEND_CACHE_KEY + (mode ? '-' + mode : '') + (mode==='pelajar' && params.matrik ? '-' + params.matrik : '');
   try{
     if(navigator.onLine === false) throw new Error('Peranti luar talian');
-    const ctrl = ('AbortController' in window) ? new AbortController() : null;
-    const t = ctrl ? setTimeout(()=>ctrl.abort(), 20000) : null;
-    const res = await fetch(SCRIPT_URL + '?key=' + encodeURIComponent(BACKEND_KEY), ctrl ? {signal: ctrl.signal} : undefined);
-    const json = await res.json();
-    if(t) clearTimeout(t);
-    saveBackendCache(json);
+    let json = null;
+    try{ json = await fetchJsonTimeout(backendUrl(params), 20000); }catch(e){ if(!mode) throw e; json = null; }
+    // backend lama / mod gagal → cuba cara asal (tanpa mod)
+    if(mode && (!json || json.error || (!Array.isArray(json.records) && !Array.isArray(json.summary)))){
+      console.warn('Mod "'+mode+'" tidak disokong oleh backend — guna cara asal.', json && json.error);
+      mode = null;
+      json = await fetchJsonTimeout(backendUrl({}), 20000);
+    }
+    saveBackendCache(json, cacheKey);
     BACKEND_FROM_CACHE = false;
-    return backendResult(json);
+    return backendResult(json, mode);
   }catch(e){
     console.warn('Tidak dapat hubungi Google Sheets:', e);
     BACKEND_FROM_CACHE = true;
-    const cached = loadBackendCache();
-    if(cached) return backendResult(cached);
+    const cached = loadBackendCache(cacheKey) || loadBackendCache(BACKEND_CACHE_KEY);
+    if(cached) return backendResult(cached, mode);
     let lastSem = '';
     try{ lastSem = localStorage.getItem(LAST_SEM_KEY) || ''; }catch(_){}
     return {records: groupFlatRecords(pendingAsRows()), semester: lastSem || 'Sesi Semasa (belum ditetapkan)'};
@@ -893,20 +936,21 @@ async function downloadOfflineAudio(){
 function setOfflineDlLabel(txt){ const b = document.getElementById('offlineDlBtn'); if(b){ b.disabled = true; b.textContent = txt; } }
 
 /* ---- salinan data Google Sheets dalam peranti ---- */
-function saveBackendCache(json){
-  if(!json || !Array.isArray(json.records)) return; // jangan tindih salinan baik dengan respons ralat
+function saveBackendCache(json, cacheKey){
+  cacheKey = cacheKey || BACKEND_CACHE_KEY;
+  if(!json || (!Array.isArray(json.records) && !Array.isArray(json.summary))) return; // jangan tindih salinan baik dengan respons ralat
   try{ if(json.semester) localStorage.setItem(LAST_SEM_KEY, json.semester); }catch(e){}
-  try{ localStorage.setItem(BACKEND_CACHE_KEY, JSON.stringify(json)); }
+  try{ localStorage.setItem(cacheKey, JSON.stringify(json)); }
   catch(e){
     // ruang penuh: simpan rekod pelajar peranti ini sahaja
     try{
       const m = (localStorage.getItem('idalil-student-matric')||'').toUpperCase();
-      const slim = Object.assign({}, json, {records: json.records.filter(r=> m && String(r.Matrik||'').toUpperCase()===m)});
-      localStorage.setItem(BACKEND_CACHE_KEY, JSON.stringify(slim));
+      const slim = Object.assign({}, json, {records: (json.records||[]).filter(r=> m && String(r.Matrik||'').toUpperCase()===m), summary: []});
+      localStorage.setItem(cacheKey, JSON.stringify(slim));
     }catch(e2){}
   }
 }
-function loadBackendCache(){ try{ return JSON.parse(localStorage.getItem(BACKEND_CACHE_KEY)||'null'); }catch(e){ return null; } }
+function loadBackendCache(cacheKey){ try{ return JSON.parse(localStorage.getItem(cacheKey || BACKEND_CACHE_KEY)||'null'); }catch(e){ return null; } }
 
 /* ---- baris gilir rekod skor yang belum dihantar ---- */
 function readPending(){ try{ const l = JSON.parse(localStorage.getItem(PENDING_KEY)||'[]'); return Array.isArray(l) ? l : []; }catch(e){ return []; } }
@@ -1005,7 +1049,7 @@ let dashKelasFilter = '__ALL__'; // tapisan kelas di papan pantau
 function slug(s){ return (s||'').toLowerCase().trim().replace(/\s+/g,'-').replace(/[^a-z0-9\u0600-\u06FF-]/g,''); }
 
 async function loadCurrentSemester(){
-  const {semester} = await fetchBackend();
+  const {semester} = await fetchBackend('config');
   CURRENT_SEMESTER = semester;
 }
 const loadAppConfig = loadCurrentSemester; // fetchBackend() turut sentiasa kemas kini MANUAL_AUDIO
@@ -1276,7 +1320,7 @@ function wrapCenterText(ctx, text, x, y, maxWidth, lineHeight){
 async function loadStudentProgress(){
   progressCache = {};
   if(!profileComplete()) return;
-  const {records} = await fetchBackend();
+  const {records} = await fetchBackend('pelajar', {matrik: studentMatric, kelas: studentKelas});
   records
     .filter(r => (r.matric ? r.matric===studentMatric : r.studentName===studentName) && r.semester===CURRENT_SEMESTER)
     .forEach(r => { progressCache[r.dalilId] = r; });
@@ -2526,7 +2570,7 @@ async function saveProgress(id, score){
    8. DASHBOARD PENSYARAH
    ============================================================ */
 async function fetchAllProgress(){
-  const {records} = await fetchBackend();
+  const {records} = await fetchBackend('pensyarah', {sesi:'__ALL__'});
   return records;
 }
 
