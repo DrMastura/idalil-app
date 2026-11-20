@@ -347,6 +347,25 @@
   .gain-bar .gb-first{position:absolute;left:0;top:0;bottom:0;background:#c9c2ad;}
   .gain-bar .gb-best{position:absolute;top:0;bottom:0;background:linear-gradient(90deg,var(--gold),#3f8a5a);}
 
+  /* ============ PRESTASI INDIVIDU IKUT KELAS (papan pantau) ============ */
+  .indiv-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+  .indiv-btns{display:flex;gap:6px;}
+  .indiv-btns .btn{padding:6px 12px;font-size:12px;}
+  .indiv-kelas{margin-bottom:18px;}
+  .indiv-kelas-head{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;background:var(--ink-2);color:#fff;border-radius:10px;padding:10px 14px;font-size:12.5px;margin-bottom:8px;}
+  .indiv-kelas-head b{color:var(--gold-2);}
+  .indiv-kelas-name{font-weight:700;font-size:14.5px;color:var(--gold-2);}
+  .indiv-stud{border:1px solid var(--line);border-radius:10px;margin-bottom:6px;background:#fff;}
+  .indiv-stud[open]{border-color:var(--gold);}
+  .indiv-stud summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;padding:10px 14px;font-size:13px;}
+  .indiv-stud summary::-webkit-details-marker{display:none;}
+  .indiv-stud summary::before{content:'▸';color:var(--gold);font-size:12px;transition:transform .15s;}
+  .indiv-stud[open] summary::before{transform:rotate(90deg);}
+  .is-name{font-weight:600;color:var(--ink);min-width:220px;flex:1;}
+  .is-matric{display:block;font-weight:400;font-size:10.5px;color:#8a7d55;}
+  .is-meta{font-size:12px;color:#5c5334;}
+  .indiv-table{margin:0 0 6px;}
+
   /* ============ KOTAK INPUT DALAM APLIKASI (ganti prompt) ============ */
   .ask-overlay{position:fixed;inset:0;z-index:400;background:rgba(16,16,40,.62);display:flex;align-items:center;justify-content:center;padding:20px;}
   .ask-box{background:var(--parchment);border:1.5px solid var(--gold);border-radius:16px;padding:20px 20px 16px;width:100%;max-width:380px;box-shadow:0 20px 50px rgba(0,0,0,.35);}
@@ -2844,6 +2863,79 @@ function renderDalilSection(records){
   `;
 }
 
+/* ---- Papan pantau: prestasi individu mengikut dalil, dikumpul ikut kelas ---- */
+function renderIndividuSection(records){
+  const box = document.getElementById('indivList');
+  if(!box) return;
+  if(!records.length){ box.innerHTML = `<p class="note" style="margin:0;">Tiada rekod lagi bagi pilihan sesi/kelas ini.</p>`; return; }
+  const order = {}; DALIL.forEach((d,i)=> order[d.id] = i);
+  const avg = arr => arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : 0;
+
+  // kelas → pelajar → senarai dalil
+  const byKelas = {};
+  records.forEach(r=>{
+    const k = r.kelas || 'Tiada kelas';
+    const sk = r.matric || r.studentName;
+    byKelas[k] = byKelas[k] || {};
+    (byKelas[k][sk] = byKelas[k][sk] || []).push(r);
+  });
+  const kelasList = Object.keys(byKelas).sort((a,b)=> a==='Tiada kelas' ? 1 : b==='Tiada kelas' ? -1 : a.localeCompare(b));
+
+  box.innerHTML = kelasList.map(k=>{
+    const studs = Object.keys(byKelas[k]).map(sk=>{
+      const recs = byKelas[k][sk].slice().sort((a,b)=> (order[a.dalilId] ?? 999) - (order[b.dalilId] ?? 999));
+      const latest = recs.reduce((a,r)=> (r.attempts.at(-1)?.ts||0) > (a.attempts.at(-1)?.ts||0) ? r : a, recs[0]);
+      const rows = recs.map(r=>{
+        const first = r.attempts[0]?.score ?? 0, best = r.best||0, last = recLastScore(r);
+        const d = DALIL.find(x=>x.id===r.dalilId);
+        return {ref: d ? d.ref : r.dalilId, topic: (d ? d.topic : '') || r.topic || '', n: r.attempts.length, first, best, last, gain: best-first};
+      });
+      return {name: latest.studentName, matric: latest.matric || '', rows,
+              avgFirst: avg(rows.map(x=>x.first)), avgBest: avg(rows.map(x=>x.best)),
+              mastered: rows.filter(x=>x.best>=85).length, attempts: rows.reduce((a,x)=>a+x.n,0)};
+    }).sort((a,b)=> a.name.localeCompare(b.name));
+    const allRows = studs.flatMap(s=>s.rows);
+    return `
+      <div class="indiv-kelas">
+        <div class="indiv-kelas-head">
+          <span class="indiv-kelas-name">Kelas ${k}</span>
+          <span>${studs.length} pelajar</span>
+          <span>${allRows.length} rekod dalil</span>
+          <span>Purata pertama → terbaik: <b>${avg(allRows.map(x=>x.first))}% → ${avg(allRows.map(x=>x.best))}%</b></span>
+          <span>Dikuasai (≥85%): <b>${allRows.filter(x=>x.best>=85).length}</b></span>
+        </div>
+        ${studs.map(s=>`
+          <details class="indiv-stud">
+            <summary>
+              <span class="is-name">${s.name}<span class="is-matric">${s.matric}</span></span>
+              <span class="is-meta">${s.rows.length} dalil · ${s.attempts} cubaan</span>
+              <span class="is-meta">${pillFor(s.avgFirst)} → ${pillFor(s.avgBest)}</span>
+              <span class="is-meta">${s.mastered} dikuasai</span>
+            </summary>
+            <div style="overflow-x:auto"><table class="rec-table indiv-table">
+              <tr><th>Dalil</th><th>Tajuk</th><th>Cubaan</th><th>Skor pertama</th><th>Skor terbaik</th><th>Skor terakhir</th><th>Peningkatan</th><th style="min-width:120px;">Pertama → terbaik</th></tr>
+              ${s.rows.map(x=>`
+                <tr>
+                  <td>${x.ref}</td>
+                  <td>${x.topic}</td>
+                  <td>${x.n}</td>
+                  <td>${pillFor(x.first)}</td>
+                  <td>${pillFor(x.best)}</td>
+                  <td>${pillFor(x.last)}</td>
+                  <td><b class="${x.gain>0?'gain-up':''}">${x.gain>0?'+':''}${x.gain}</b></td>
+                  <td><div class="gain-bar"><div class="gb-first" style="width:${x.first}%"></div><div class="gb-best" style="left:${x.first}%;width:${Math.max(0,x.best-x.first)}%"></div></div></td>
+                </tr>`).join('')}
+            </table></div>
+          </details>`).join('')}
+      </div>`;
+  }).join('');
+
+  const setAll = open => box.querySelectorAll('details.indiv-stud').forEach(d=> d.open = open);
+  const ob = document.getElementById('indivOpenAll'), cb = document.getElementById('indivCloseAll');
+  if(ob) ob.onclick = ()=> setAll(true);
+  if(cb) cb.onclick = ()=> setAll(false);
+}
+
 async function renderDashboard(){
   const root = document.getElementById('appRoot');
   root.innerHTML = `<div class="dash-head"><div><h2>Papan Pantau Pensyarah</h2><p>Memuatkan data kemajuan kelas…</p></div></div>`;
@@ -2916,6 +3008,18 @@ async function renderDashboard(){
       <div id="dalilDetail"></div>
     </div>
 
+    <div class="panel dash-section" id="indivSection">
+      <div class="indiv-head">
+        <h3 style="margin:0;">${ICON.users} Prestasi individu mengikut dalil (ikut kelas)</h3>
+        <div class="indiv-btns">
+          <button class="btn ghost" id="indivOpenAll">Buka semua</button>
+          <button class="btn ghost" id="indivCloseAll">Tutup semua</button>
+        </div>
+      </div>
+      <p class="note" style="margin:4px 0 12px;">Pelajar dikumpulkan mengikut kelas. Klik nama pelajar untuk melihat setiap dalil yang dilatih. Untuk satu kelas sahaja (cth. B2T6), pilih kelas di menu <b>Kelas</b> di atas.</p>
+      <div id="indivList"></div>
+    </div>
+
     <div class="panel dash-section">
       <h3>${ICON.mic} Sediakan Bacaan Rujukan Manual</h3>
       <p class="note" style="margin:-4px 0 12px;">Untuk dalil yang dipetik sebahagian sahaja (audio qari automatik tidak sesuai dipaparkan), pensyarah boleh rekod terus atau muat naik fail audio sendiri di sini sebagai rujukan pelajar.</p>
@@ -2972,6 +3076,8 @@ async function renderDashboard(){
 
   // prestasi mengikut dalil
   renderDalilSection(records);
+  // prestasi individu mengikut dalil, dikumpul ikut kelas
+  renderIndividuSection(records);
 
   // raw table
   const rawTable = document.getElementById('rawTable');
