@@ -779,7 +779,7 @@ const BACKEND_KEY  = 'iDALIL-KMKJ-2026-Rahsia';
 /* SENARAI KELAS — isi nama kelas sebenar, cth. ['K1T1','K1T2','K2T1'].
    Jika dibiarkan kosong [], pelajar menaip nama kelas sendiri (ditukar ke huruf besar tanpa jarak). */
 const KELAS_LIST = [];
-const LECTURER_PIN = 'DrM-7413'; // PIN untuk masuk bahagian Pensyarah (tukar ikut suka)
+const LECTURER_PIN = 'drm'; // PIN pensyarah (huruf besar/kecil tidak dikira: drm = DRM = DrM)
 
 function groupFlatRecords(rows){
   const groups = {};
@@ -3026,11 +3026,6 @@ async function renderDashboard(){
       <div id="audioManagerList"></div>
     </div>
 
-    <div class="panel dash-section">
-      <h3>${ICON.book} Log terperinci (untuk dokumentasi keberkesanan)</h3>
-      <p class="note" style="margin:-4px 0 12px;">Setiap baris mewakili satu dalil yang telah dicuba oleh seorang pelajar — boleh disemak terus atau dieksport sebagai CSV untuk laporan.</p>
-      <div style="overflow-x:auto"><table class="rec-table" id="rawTable"></table></div>
-    </div>
   `;
 
   // topic bars
@@ -3079,31 +3074,7 @@ async function renderDashboard(){
   // prestasi individu mengikut dalil, dikumpul ikut kelas
   renderIndividuSection(records);
 
-  // raw table
-  const rawTable = document.getElementById('rawTable');
-  if(records.length){
-    rawTable.innerHTML = `
-      <tr><th>Pelajar</th><th>No. Matrik</th><th>Kelas</th><th>Dalil</th><th>Tajuk</th><th>Skor pertama</th><th>Skor terbaik</th><th>Percubaan</th><th>Kali terakhir</th></tr>
-      ${records.sort((a,b)=> (b.attempts.at(-1)?.ts||0) - (a.attempts.at(-1)?.ts||0)).map(r=>{
-        const dalil = DALIL.find(d=>d.id===r.dalilId);
-        const lastTs = r.attempts.at(-1)?.ts;
-        const firstScore = r.attempts[0]?.score ?? 0;
-        return `<tr>
-          <td>${r.studentName}</td>
-          <td>${r.matric||'—'}</td>
-          <td>${r.kelas||'—'}</td>
-          <td>${dalil?dalil.ref:r.dalilId}</td>
-          <td>${r.topic}</td>
-          <td>${pillFor(firstScore)}</td>
-          <td>${pillFor(r.best||0)}</td>
-          <td>${r.attempts.length}</td>
-          <td>${lastTs ? new Date(lastTs).toLocaleString('ms-MY') : '—'}</td>
-        </tr>`;
-      }).join('')}
-    `;
-  } else {
-    rawTable.innerHTML = `<tr><td class="note">Tiada rekod percubaan lagi.</td></tr>`;
-  }
+  // (Log terperinci dibuang dari paparan — data lengkap ada dalam Google Sheet & butang CSV di atas)
 
   document.getElementById('exportBtn').onclick = ()=> exportCSV(records, filterValue + (dashKelasFilter!=='__ALL__' ? '_'+dashKelasFilter : ''));
 
