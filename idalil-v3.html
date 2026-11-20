@@ -366,6 +366,12 @@
   .is-meta{font-size:12px;color:#5c5334;}
   .indiv-table{margin:0 0 6px;}
 
+  /* ============ TETAPAN PENSYARAH (tersembunyi) ============ */
+  .admin-box summary{cursor:pointer;font-weight:600;font-size:14px;color:var(--ink-2);list-style:none;}
+  .admin-box summary::-webkit-details-marker{display:none;}
+  .admin-box[open] summary{margin-bottom:14px;}
+  .admin-btns{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+
   /* ============ KOTAK INPUT DALAM APLIKASI (ganti prompt) ============ */
   .ask-overlay{position:fixed;inset:0;z-index:400;background:rgba(16,16,40,.62);display:flex;align-items:center;justify-content:center;padding:20px;}
   .ask-box{background:var(--parchment);border:1.5px solid var(--gold);border-radius:16px;padding:20px 20px 16px;width:100%;max-width:380px;box-shadow:0 20px 50px rgba(0,0,0,.35);}
@@ -2956,7 +2962,6 @@ async function renderDashboard(){
         <h2>${ICON.chart} Papan Pantau Pensyarah</h2>
         <p>Ringkasan kemajuan bacaan dalil bagi sesi yang dipilih di bawah</p>
       </div>
-      <button class="btn gold" id="exportBtn">${ICON.download} Muat turun rekod keberkesanan (CSV)</button>
     </div>
 
     <div class="panel dash-section" style="padding:14px 18px;">
@@ -2972,12 +2977,8 @@ async function renderDashboard(){
           <option value="__ALL__" ${dashKelasFilter==='__ALL__'?'selected':''}>Semua kelas</option>
           ${kelasEver.map(k=>`<option value="${k}" ${dashKelasFilter===k?'selected':''}>${k}</option>`).join('')}
         </select>
-        <button class="btn ghost" id="newSessionBtn">${ICON.trend} Mula sesi/semester baharu</button>
       </div>
-      <p class="note" style="margin:0;">Data sesi lepas tidak dipadam — ia kekal tersimpan dan boleh dirujuk semula bila-bila untuk dokumentasi keberkesanan sepanjang tempoh penggunaan aplikasi ini.</p>
     </div>
-
-    <div class="privacy-note">${ICON.users} Data pada papan pantau ini (nama pelajar &amp; skor bacaan) dikongsi merentasi semua pengguna aplikasi ini bagi tujuan penyeliaan pensyarah dan dokumentasi keberkesanan.</div>
 
     <div class="stat-row">
       <div class="stat-card"><div class="num">${s.totalStudents}</div><div class="lbl">${ICON.users} Pelajar aktif</div></div>
@@ -2989,16 +2990,6 @@ async function renderDashboard(){
     <div class="panel dash-section">
       <h3>${ICON.layers} Purata skor mengikut tajuk</h3>
       <div class="topic-bars" id="topicBars"></div>
-    </div>
-
-    <div class="panel dash-section">
-      <h3>${ICON.trend} Pelajar yang berjaya perbaiki bacaan</h3>
-      <div class="improved-list" id="improvedList"></div>
-    </div>
-
-    <div class="panel dash-section">
-      <h3>${ICON.users} Rekod prestasi setiap pelajar</h3>
-      <div style="overflow-x:auto"><table class="rec-table" id="studentTable"></table></div>
     </div>
 
     <div class="panel dash-section" id="dalilSection">
@@ -3020,11 +3011,17 @@ async function renderDashboard(){
       <div id="indivList"></div>
     </div>
 
-    <div class="panel dash-section">
+    <details class="panel dash-section admin-box">
+      <summary>⚙️ Tetapan pensyarah <span class="note" style="margin:0 0 0 6px;font-weight:400;">(audio rujukan · sesi baharu · muat turun CSV)</span></summary>
+      <div class="admin-btns">
+        <button class="btn gold" id="exportBtn">${ICON.download} Muat turun rekod keberkesanan (CSV)</button>
+        <button class="btn ghost" id="newSessionBtn">${ICON.trend} Mula sesi/semester baharu</button>
+      </div>
+      <p class="note" style="margin:0 0 14px;">Data sesi lepas tidak dipadam — ia kekal dalam Google Sheet dan boleh dipapar semula melalui menu <b>Papar sesi</b>.</p>
       <h3>${ICON.mic} Sediakan Bacaan Rujukan Manual</h3>
       <p class="note" style="margin:-4px 0 12px;">Untuk dalil yang dipetik sebahagian sahaja (audio qari automatik tidak sesuai dipaparkan), pensyarah boleh rekod terus atau muat naik fail audio sendiri di sini sebagai rujukan pelajar.</p>
       <div id="audioManagerList"></div>
-    </div>
+    </details>
 
   `;
 
@@ -3037,37 +3034,6 @@ async function renderDashboard(){
       <span>${t.avg}%</span>
     </div>
   `).join('') : `<p class="note" style="margin:0;">Tiada data lagi — belum ada pelajar mencuba latihan bacaan.</p>`;
-
-  // improved list
-  document.getElementById('improvedList').innerHTML = s.improvedPairs.length ? s.improvedPairs.slice(0,10).map(p=>`
-    <div class="improved-item">
-      <span><b>${p.student}</b> — ${p.ref}</span>
-      <span class="arrow">${p.first}% → ${p.best}% (+${p.delta})</span>
-    </div>
-  `).join('') : `<p class="note" style="margin:0;">Belum ada pelajar dengan peningkatan ketara (≥15 mata) buat masa ini.</p>`;
-
-  // student table
-  const stTable = document.getElementById('studentTable');
-  if(s.students.length){
-    stTable.innerHTML = `
-      <tr><th>Pelajar</th><th>No. Matrik</th><th>Kelas</th><th>Dalil dicuba</th><th>Jumlah percubaan</th><th>Purata skor pertama</th><th>Purata skor terbaik</th><th>Dalil dikuasai (≥85%)</th><th>Status</th></tr>
-      ${s.students.sort((a,b)=> (a.kelas||'').localeCompare(b.kelas||'') || b.avgBest-a.avgBest).map(st=>`
-        <tr>
-          <td>${st.name}</td>
-          <td>${st.matric||'—'}</td>
-          <td>${st.kelas||'—'}</td>
-          <td>${st.dalilCount}</td>
-          <td>${st.totalAttempts}</td>
-          <td>${pillFor(st.avgFirst)}</td>
-          <td>${pillFor(st.avgBest)}</td>
-          <td>${st.mastered}</td>
-          <td>${st.improvement>=15 ? `${ICON.trend} Bertambah baik` : '—'}</td>
-        </tr>
-      `).join('')}
-    `;
-  } else {
-    stTable.innerHTML = `<tr><td class="note">Tiada rekod pelajar lagi.</td></tr>`;
-  }
 
   // prestasi mengikut dalil
   renderDalilSection(records);
