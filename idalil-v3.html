@@ -347,6 +347,11 @@
   .gain-bar .gb-first{position:absolute;left:0;top:0;bottom:0;background:#c9c2ad;}
   .gain-bar .gb-best{position:absolute;top:0;bottom:0;background:linear-gradient(90deg,var(--gold),#3f8a5a);}
 
+  .siling-toggle{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:#3c362a;margin:0 0 8px;cursor:pointer;}
+  .siling-toggle input{width:16px;height:16px;accent-color:var(--ink-2);}
+  .siling-note{font-size:12px;color:#5c5334;background:#fffaf0;border-left:3px solid var(--gold);padding:6px 10px;border-radius:6px;margin-bottom:10px;}
+  .row-siling td{opacity:.55;}
+
   /* ============ PRESTASI INDIVIDU IKUT KELAS (papan pantau) ============ */
   .indiv-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
   .indiv-btns{display:flex;gap:6px;}
@@ -2791,6 +2796,7 @@ function pillFor(score){
 
 /* ---- Papan pantau: prestasi mengikut dalil ---- */
 let dashDalilFilter = null;
+let dashKecualiSiling = true; // kecualikan pelajar yang sudah 100% pada cubaan pertama (kesan siling) daripada analisis
 function recLastScore(r){
   const a = r.attempts || [];
   const v = a.length ? a[a.length-1].score : null;
@@ -2824,8 +2830,12 @@ function renderDalilSection(records){
     return {name:r.studentName, matric:r.matric||'', kelas:r.kelas||'', n:r.attempts.length, first, best, last, gain:best-first};
   }).sort((a,b)=> b.gain-a.gain || b.best-a.best);
   const avg = arr => arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : 0;
-  const practised = rows.filter(r=>r.n>=2);           // hanya pelajar yang berlatih semula (≥2 cubaan)
-  const mastered = rows.filter(r=>r.best>=85).length;
+  // kesan siling: pelajar yang sudah 100% pada cubaan pertama tiada ruang untuk meningkat
+  const siling = rows.filter(r=>r.first>=100);
+  const allRows = rows;
+  const anRows = dashKecualiSiling ? rows.filter(r=>r.first<100) : rows;   // baris yang dianalisis
+  const practised = anRows.filter(r=>r.n>=2);           // hanya pelajar yang berlatih semula (≥2 cubaan)
+  const mastered = anRows.filter(r=>r.best>=85).length;
   const tt = practised.length >= 3 ? pairedTTest(practised.map(r=>r.first), practised.map(r=>r.best)) : null;
   const ttLast = practised.length >= 3 ? pairedTTest(practised.map(r=>r.first), practised.map(r=>r.last)) : null;
 
@@ -2841,11 +2851,14 @@ function renderDalilSection(records){
       <div class="ar dalil-ar" dir="rtl">${d ? (d.arabic||'').split(/\s+/).slice(0,10).join(' ') + ((d.arabic||'').split(/\s+/).length>10?' …':'') : ''}</div>
       <div class="note" style="margin:2px 0 0;">${d ? d.ref + ' · ' + d.topic : ''}</div>
     </div>
+    <label class="siling-toggle"><input type="checkbox" id="silingToggle" ${dashKecualiSiling?'checked':''}>
+      Kecualikan pelajar yang sudah <b>100%</b> pada cubaan pertama daripada analisis <span class="note" style="margin:0;">(kesan siling — tiada ruang untuk meningkat)</span></label>
+    ${dashKecualiSiling && siling.length ? `<div class="siling-note">ℹ️ ${siling.length} pelajar mendapat 100% pada cubaan pertama — sudah menguasai sebelum latihan, jadi tidak dikira dalam purata &amp; ujian-t di bawah. Mereka masih dipaparkan di hujung jadual.</div>` : ''}
     <div class="stat-row dalil-stats">
-      <div class="stat-card"><div class="num">${rows.length}</div><div class="lbl">Pelajar mencuba</div></div>
-      <div class="stat-card"><div class="num">${avg(rows.map(r=>r.first))}% → ${avg(rows.map(r=>r.best))}%</div><div class="lbl">Purata skor pertama → terbaik</div></div>
-      <div class="stat-card"><div class="num">${rows.length ? Math.round(100*mastered/rows.length) : 0}%</div><div class="lbl">Pelajar menguasai (≥85%)</div></div>
-      <div class="stat-card"><div class="num">${rows.reduce((a,r)=>a+r.n,0)}</div><div class="lbl">Jumlah cubaan</div></div>
+      <div class="stat-card"><div class="num">${anRows.length}</div><div class="lbl">Pelajar dianalisis${dashKecualiSiling && siling.length ? ` <span style="opacity:.75">(+${siling.length} sudah 100%)</span>` : ''}</div></div>
+      <div class="stat-card"><div class="num">${avg(anRows.map(r=>r.first))}% → ${avg(anRows.map(r=>r.best))}%</div><div class="lbl">Purata skor pertama → terbaik</div></div>
+      <div class="stat-card"><div class="num">${anRows.length ? Math.round(100*mastered/anRows.length) : 0}%</div><div class="lbl">Pelajar menguasai (≥85%)</div></div>
+      <div class="stat-card"><div class="num">${anRows.reduce((a,r)=>a+r.n,0)}</div><div class="lbl">Jumlah cubaan</div></div>
     </div>
     <div class="tt-box">
       <div class="tt-title">${ICON.trend} Ujian-t berpasangan — ${practised.length} pelajar yang berlatih semula (≥2 cubaan)</div>
@@ -2854,9 +2867,9 @@ function renderDalilSection(records){
     </div>
     <div style="overflow-x:auto"><table class="rec-table">
       <tr><th>Pelajar</th><th>Kelas</th><th>Cubaan</th><th>Skor pertama</th><th>Skor terbaik</th><th>Skor terakhir</th><th>Peningkatan</th><th style="min-width:140px;">Pertama → terbaik</th></tr>
-      ${rows.map(r=>`
-        <tr>
-          <td>${r.name}<div class="note" style="margin:0;font-size:10.5px;">${r.matric||''}</div></td>
+      ${[...anRows, ...(dashKecualiSiling ? siling : [])].map(r=>{ const ex = dashKecualiSiling && r.first>=100; return `
+        <tr class="${ex?'row-siling':''}">
+          <td>${r.name}<div class="note" style="margin:0;font-size:10.5px;">${r.matric||''}${ex?' · <b>sudah 100% sejak awal — tidak dianalisis</b>':''}</div></td>
           <td>${r.kelas||'—'}</td>
           <td>${r.n}</td>
           <td>${pillFor(r.first)}</td>
@@ -2864,9 +2877,11 @@ function renderDalilSection(records){
           <td>${pillFor(r.last)}</td>
           <td><b class="${r.gain>0?'gain-up':''}">${r.gain>0?'+':''}${r.gain}</b></td>
           <td><div class="gain-bar"><div class="gb-first" style="width:${r.first}%"></div><div class="gb-best" style="left:${r.first}%;width:${Math.max(0,r.best-r.first)}%"></div></div></td>
-        </tr>`).join('')}
+        </tr>`; }).join('')}
     </table></div>
   `;
+  const tg = document.getElementById('silingToggle');
+  if(tg) tg.onchange = ()=>{ dashKecualiSiling = tg.checked; renderDalilSection(records); };
 }
 
 /* ---- Papan pantau: prestasi individu mengikut dalil, dikumpul ikut kelas ---- */
