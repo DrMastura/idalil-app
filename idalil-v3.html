@@ -332,6 +332,21 @@
   .rd-note{font-size:11px;color:#7c7256;margin-top:8px;line-height:1.5;}
   .access-error{font-size:11.5px;color:var(--bad);min-height:16px;margin-top:10px;}
 
+  /* ============ PRESTASI MENGIKUT DALIL (papan pantau) ============ */
+  .dalil-pick select{width:100%;max-width:560px;padding:10px 12px;border-radius:10px;border:1.5px solid var(--gold);font-family:'Jost',sans-serif;font-size:13.5px;background:#fff;margin-bottom:14px;}
+  .dalil-head{margin-bottom:12px;}
+  .dalil-ar{font-size:24px;line-height:1.9;color:var(--ink);}
+  .dalil-stats .num{font-size:22px;}
+  .tt-box{background:var(--parchment-2);border:1px dashed var(--gold);border-radius:12px;padding:10px 14px;margin:4px 0 14px;font-size:12.5px;line-height:1.7;}
+  .tt-title{font-weight:600;color:var(--ink-2);margin-bottom:4px;display:flex;align-items:center;gap:6px;}
+  .tt-line{color:#3c362a;}
+  .tt-sig{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:12px;background:var(--good-bg);color:var(--good);font-weight:600;font-size:11px;}
+  .tt-ns{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:12px;background:var(--mid-bg, #FAF0D2);color:var(--mid);font-weight:600;font-size:11px;}
+  .gain-up{color:var(--good);}
+  .gain-bar{position:relative;height:10px;border-radius:6px;background:#eee;overflow:hidden;}
+  .gain-bar .gb-first{position:absolute;left:0;top:0;bottom:0;background:#c9c2ad;}
+  .gain-bar .gb-best{position:absolute;top:0;bottom:0;background:linear-gradient(90deg,var(--gold),#3f8a5a);}
+
   /* ============ KOTAK INPUT DALAM APLIKASI (ganti prompt) ============ */
   .ask-overlay{position:fixed;inset:0;z-index:400;background:rgba(16,16,40,.62);display:flex;align-items:center;justify-content:center;padding:20px;}
   .ask-box{background:var(--parchment);border:1.5px solid var(--gold);border-radius:16px;padding:20px 20px 16px;width:100%;max-width:380px;box-shadow:0 20px 50px rgba(0,0,0,.35);}
@@ -2702,9 +2717,131 @@ function summarize(records){
   return {students, topics, improvedPairs, totalAttemptsAll, overallAvgBest, studentsImproved, totalStudents:students.length, records, allSemesters};
 }
 
+/* ---- statistik: ujian-t sampel berpasangan (pra = skor pertama, pasca = skor terbaik/terakhir) ---- */
+function statLnGamma(z){
+  const g = [76.18009172947146,-86.50532032941677,24.01409824083091,-1.231739572450155,0.1208650973866179e-2,-0.5395239384953e-5];
+  let x = z, y = z, tmp = x + 5.5; tmp -= (x + 0.5) * Math.log(tmp);
+  let ser = 1.000000000190015;
+  for(let j=0;j<6;j++) ser += g[j] / ++y;
+  return -tmp + Math.log(2.5066282746310005 * ser / x);
+}
+function statBetacf(a, b, x){
+  const MAXIT = 200, EPS = 3e-14, FPMIN = 1e-300;
+  let qab = a+b, qap = a+1, qam = a-1, c = 1, d = 1 - qab*x/qap;
+  if(Math.abs(d) < FPMIN) d = FPMIN; d = 1/d; let h = d;
+  for(let m=1; m<=MAXIT; m++){
+    const m2 = 2*m;
+    let aa = m*(b-m)*x/((qam+m2)*(a+m2));
+    d = 1 + aa*d; if(Math.abs(d) < FPMIN) d = FPMIN; c = 1 + aa/c; if(Math.abs(c) < FPMIN) c = FPMIN; d = 1/d; h *= d*c;
+    aa = -(a+m)*(qab+m)*x/((a+m2)*(qap+m2));
+    d = 1 + aa*d; if(Math.abs(d) < FPMIN) d = FPMIN; c = 1 + aa/c; if(Math.abs(c) < FPMIN) c = FPMIN; d = 1/d;
+    const del = d*c; h *= del; if(Math.abs(del-1) < EPS) break;
+  }
+  return h;
+}
+function statIbeta(x, a, b){
+  if(x <= 0) return 0; if(x >= 1) return 1;
+  const bt = Math.exp(statLnGamma(a+b) - statLnGamma(a) - statLnGamma(b) + a*Math.log(x) + b*Math.log(1-x));
+  return x < (a+1)/(a+b+2) ? bt*statBetacf(a,b,x)/a : 1 - bt*statBetacf(b,a,1-x)/b;
+}
+function pairedTTest(pre, post){
+  const n = Math.min(pre.length, post.length);
+  if(n < 2) return null;
+  const diffs = []; for(let i=0;i<n;i++) diffs.push(post[i]-pre[i]);
+  const mean = diffs.reduce((a,b)=>a+b,0)/n;
+  const sd = Math.sqrt(diffs.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(n-1));
+  const mPre = pre.slice(0,n).reduce((a,b)=>a+b,0)/n, mPost = post.slice(0,n).reduce((a,b)=>a+b,0)/n;
+  if(!(sd > 0)) return {n, df:n-1, mPre, mPost, mean, sd:0, t:null, p:(mean!==0?0:1), d:null};
+  const t = mean / (sd/Math.sqrt(n)), df = n-1;
+  const p = statIbeta(df/(df+t*t), df/2, 0.5);
+  return {n, df, mPre, mPost, mean, sd, t, p, d: mean/sd};
+}
+function fmtP(p){ return p === null || p === undefined ? '—' : p < 0.001 ? '< .001' : p.toFixed(3).replace(/^0/,''); }
+function saizKesanLabel(d){ if(d===null||d===undefined) return ''; const a = Math.abs(d); return a>=0.8?'besar':a>=0.5?'sederhana':a>=0.2?'kecil':'sangat kecil'; }
+
 function pillFor(score){
   const cls = score>=85?'good':score>=50?'mid':'bad';
   return `<span class="pill ${cls}">${score}%</span>`;
+}
+
+/* ---- Papan pantau: prestasi mengikut dalil ---- */
+let dashDalilFilter = null;
+function recLastScore(r){
+  const a = r.attempts || [];
+  const v = a.length ? a[a.length-1].score : null;
+  return (v !== null && v !== undefined) ? v : (r.last ?? 0);
+}
+function renderDalilSection(records){
+  const sel = document.getElementById('dalilSelect'), box = document.getElementById('dalilDetail');
+  if(!sel || !box) return;
+  const by = {};
+  records.forEach(r=>{ if(r.dalilId) (by[r.dalilId] = by[r.dalilId] || []).push(r); });
+  const ids = DALIL.map(d=>d.id).filter(id=>by[id]);
+  Object.keys(by).forEach(id=>{ if(!ids.includes(id)) ids.push(id); });
+  if(!ids.length){
+    sel.style.display = 'none';
+    box.innerHTML = `<p class="note" style="margin:0;">Tiada rekod lagi bagi pilihan sesi/kelas ini.</p>`;
+    return;
+  }
+  // lalai: dalil yang paling ramai pelajar mencuba
+  if(!dashDalilFilter || !by[dashDalilFilter]) dashDalilFilter = ids.slice().sort((a,b)=>by[b].length-by[a].length)[0];
+  sel.style.display = '';
+  sel.innerHTML = ids.map(id=>{
+    const d = DALIL.find(x=>x.id===id);
+    return `<option value="${id}" ${id===dashDalilFilter?'selected':''}>${d?d.ref:id} — ${by[id].length} pelajar</option>`;
+  }).join('');
+  sel.onchange = ()=>{ dashDalilFilter = sel.value; renderDalilSection(records); };
+
+  const recs = by[dashDalilFilter];
+  const d = DALIL.find(x=>x.id===dashDalilFilter);
+  const rows = recs.map(r=>{
+    const first = r.attempts[0]?.score ?? 0, best = r.best||0, last = recLastScore(r);
+    return {name:r.studentName, matric:r.matric||'', kelas:r.kelas||'', n:r.attempts.length, first, best, last, gain:best-first};
+  }).sort((a,b)=> b.gain-a.gain || b.best-a.best);
+  const avg = arr => arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : 0;
+  const practised = rows.filter(r=>r.n>=2);           // hanya pelajar yang berlatih semula (≥2 cubaan)
+  const mastered = rows.filter(r=>r.best>=85).length;
+  const tt = practised.length >= 3 ? pairedTTest(practised.map(r=>r.first), practised.map(r=>r.best)) : null;
+  const ttLast = practised.length >= 3 ? pairedTTest(practised.map(r=>r.first), practised.map(r=>r.last)) : null;
+
+  const statLine = (label, t) => !t ? '' : `
+    <div class="tt-line"><b>${label}:</b>
+      ${t.t===null ? `semua pelajar berubah dengan jumlah yang sama (+${Math.round(t.mean)} mata)` :
+        `M<sub>pra</sub> = ${t.mPre.toFixed(1)}, M<sub>pasca</sub> = ${t.mPost.toFixed(1)}, t(${t.df}) = ${t.t.toFixed(2)}, p ${t.p<0.001?'':'= '}${fmtP(t.p)}, d = ${t.d.toFixed(2)} (${saizKesanLabel(t.d)})
+         ${t.p < 0.05 ? '<span class="tt-sig">✓ signifikan</span>' : '<span class="tt-ns">belum signifikan</span>'}`}
+    </div>`;
+
+  box.innerHTML = `
+    <div class="dalil-head">
+      <div class="ar dalil-ar" dir="rtl">${d ? (d.arabic||'').split(/\s+/).slice(0,10).join(' ') + ((d.arabic||'').split(/\s+/).length>10?' …':'') : ''}</div>
+      <div class="note" style="margin:2px 0 0;">${d ? d.ref + ' · ' + d.topic : ''}</div>
+    </div>
+    <div class="stat-row dalil-stats">
+      <div class="stat-card"><div class="num">${rows.length}</div><div class="lbl">Pelajar mencuba</div></div>
+      <div class="stat-card"><div class="num">${avg(rows.map(r=>r.first))}% → ${avg(rows.map(r=>r.best))}%</div><div class="lbl">Purata skor pertama → terbaik</div></div>
+      <div class="stat-card"><div class="num">${rows.length ? Math.round(100*mastered/rows.length) : 0}%</div><div class="lbl">Pelajar menguasai (≥85%)</div></div>
+      <div class="stat-card"><div class="num">${rows.reduce((a,r)=>a+r.n,0)}</div><div class="lbl">Jumlah cubaan</div></div>
+    </div>
+    <div class="tt-box">
+      <div class="tt-title">${ICON.trend} Ujian-t berpasangan — ${practised.length} pelajar yang berlatih semula (≥2 cubaan)</div>
+      ${tt ? statLine('Pertama → Terbaik', tt) + statLine('Pertama → Terakhir', ttLast)
+           : `<div class="note" style="margin:0;">Belum cukup data — perlukan sekurang-kurangnya 3 pelajar yang mencuba dalil ini 2 kali atau lebih (sekarang: ${practised.length}).</div>`}
+    </div>
+    <div style="overflow-x:auto"><table class="rec-table">
+      <tr><th>Pelajar</th><th>Kelas</th><th>Cubaan</th><th>Skor pertama</th><th>Skor terbaik</th><th>Skor terakhir</th><th>Peningkatan</th><th style="min-width:140px;">Pertama → terbaik</th></tr>
+      ${rows.map(r=>`
+        <tr>
+          <td>${r.name}<div class="note" style="margin:0;font-size:10.5px;">${r.matric||''}</div></td>
+          <td>${r.kelas||'—'}</td>
+          <td>${r.n}</td>
+          <td>${pillFor(r.first)}</td>
+          <td>${pillFor(r.best)}</td>
+          <td>${pillFor(r.last)}</td>
+          <td><b class="${r.gain>0?'gain-up':''}">${r.gain>0?'+':''}${r.gain}</b></td>
+          <td><div class="gain-bar"><div class="gb-first" style="width:${r.first}%"></div><div class="gb-best" style="left:${r.first}%;width:${Math.max(0,r.best-r.first)}%"></div></div></td>
+        </tr>`).join('')}
+    </table></div>
+  `;
 }
 
 async function renderDashboard(){
@@ -2772,6 +2909,13 @@ async function renderDashboard(){
       <div style="overflow-x:auto"><table class="rec-table" id="studentTable"></table></div>
     </div>
 
+    <div class="panel dash-section" id="dalilSection">
+      <h3>${ICON.book} Prestasi mengikut dalil</h3>
+      <p class="note" style="margin:-4px 0 12px;">Pilih satu dalil untuk melihat peningkatan setiap pelajar bagi dalil itu sahaja, termasuk ujian-t berpasangan (skor pertama → skor terbaik).</p>
+      <div class="dalil-pick"><select id="dalilSelect"></select></div>
+      <div id="dalilDetail"></div>
+    </div>
+
     <div class="panel dash-section">
       <h3>${ICON.mic} Sediakan Bacaan Rujukan Manual</h3>
       <p class="note" style="margin:-4px 0 12px;">Untuk dalil yang dipetik sebahagian sahaja (audio qari automatik tidak sesuai dipaparkan), pensyarah boleh rekod terus atau muat naik fail audio sendiri di sini sebagai rujukan pelajar.</p>
@@ -2825,6 +2969,9 @@ async function renderDashboard(){
   } else {
     stTable.innerHTML = `<tr><td class="note">Tiada rekod pelajar lagi.</td></tr>`;
   }
+
+  // prestasi mengikut dalil
+  renderDalilSection(records);
 
   // raw table
   const rawTable = document.getElementById('rawTable');
