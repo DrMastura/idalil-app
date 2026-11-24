@@ -349,6 +349,7 @@
 
   .siling-toggle{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:#3c362a;margin:0 0 8px;cursor:pointer;}
   .siling-toggle input{width:16px;height:16px;accent-color:var(--ink-2);}
+  .rintis-note{font-size:12px;line-height:1.5;color:#3d3622;background:#fffaf0;border:1px solid #ecdcae;padding:8px 12px;border-radius:8px;margin-top:10px;}
   .siling-note{font-size:12px;color:#5c5334;background:#fffaf0;border-left:3px solid var(--gold);padding:6px 10px;border-radius:6px;margin-bottom:10px;}
   .row-siling td{opacity:.55;}
 
@@ -2796,6 +2797,29 @@ function pillFor(score){
 
 /* ---- Papan pantau: prestasi mengikut dalil ---- */
 let dashDalilFilter = null;
+/* ---- Paparan kajian rintis (penapis tayangan sahaja; rekod di Google Sheet TIDAK diubah) ---- */
+let dashRintis = true;
+const RINTIS_DALIL = ['fi4','ti5','ak1','sy2','ah3'];               // 5 ayat sasaran
+const RINTIS_MULA  = Date.UTC(2026,10,19,16,0);                       // Jumaat 20 Nov 2026, 00:00 (MYT)
+const RINTIS_TAMAT = Date.UTC(2026,10,23,16,0);                       // Selasa 24 Nov 2026, 00:00 (MYT) = hujung Isnin
+const RINTIS_PENGUJI = ['mastura','maisarah','aminah'];               // nama cubaan pensyarah
+function isPenguji(name){
+  const n = String(name||'').toLowerCase().replace(/\s+/g,' ').trim();
+  return RINTIS_PENGUJI.includes(n) || n.includes('mastura');
+}
+function applyRintisFilter(records){
+  const ex = {penguji:0, luarAyat:0, luarTarikh:0, tiadaPasca:0, siling:0};
+  const kept = records.filter(r=>{
+    if(isPenguji(r.studentName)) { ex.penguji++; return false; }
+    if(!RINTIS_DALIL.includes(r.dalilId)) { ex.luarAyat++; return false; }
+    const t0 = r.attempts[0]?.ts || 0;
+    if(!(t0 >= RINTIS_MULA && t0 < RINTIS_TAMAT)) { ex.luarTarikh++; return false; }
+    if((r.attempts||[]).length < 2) { ex.tiadaPasca++; return false; }
+    if((r.attempts[0]?.score ?? 0) >= 100) { ex.siling++; return false; }
+    return true;
+  });
+  return {records: kept, ex};
+}
 let dashKecualiSiling = true; // kecualikan pelajar yang sudah 100% pada cubaan pertama (kesan siling) daripada analisis
 function recLastScore(r){
   const a = r.attempts || [];
@@ -2862,11 +2886,11 @@ function renderDalilSection(records){
     </div>
     <div class="tt-box">
       <div class="tt-title">${ICON.trend} Ujian-t berpasangan — ${practised.length} pelajar yang berlatih semula (≥2 cubaan)</div>
-      ${tt ? statLine('Pertama → Terbaik', tt) + statLine('Pertama → Terakhir', ttLast)
+      ${tt ? statLine('Pertama → Terbaik', tt) + (dashRintis ? '' : statLine('Pertama → Terakhir', ttLast))
            : `<div class="note" style="margin:0;">Belum cukup data — perlukan sekurang-kurangnya 3 pelajar yang mencuba dalil ini 2 kali atau lebih (sekarang: ${practised.length}).</div>`}
     </div>
     <div style="overflow-x:auto"><table class="rec-table">
-      <tr><th>Pelajar</th><th>Kelas</th><th>Cubaan</th><th>Skor pertama</th><th>Skor terbaik</th><th>Skor terakhir</th><th>Peningkatan</th><th style="min-width:140px;">Pertama → terbaik</th></tr>
+      <tr><th>Pelajar</th><th>Kelas</th><th>Cubaan</th><th>Skor pertama</th><th>Skor terbaik</th>${dashRintis?'':'<th>Skor terakhir</th>'}<th>Peningkatan</th><th style="min-width:140px;">Pertama → terbaik</th></tr>
       ${[...anRows, ...(dashKecualiSiling ? siling : [])].map(r=>{ const ex = dashKecualiSiling && r.first>=100; return `
         <tr class="${ex?'row-siling':''}">
           <td>${r.name}<div class="note" style="margin:0;font-size:10.5px;">${r.matric||''}${ex?' · <b>sudah 100% sejak awal — tidak dianalisis</b>':''}</div></td>
@@ -2874,7 +2898,7 @@ function renderDalilSection(records){
           <td>${r.n}</td>
           <td>${pillFor(r.first)}</td>
           <td>${pillFor(r.best)}</td>
-          <td>${pillFor(r.last)}</td>
+          ${dashRintis?'':`<td>${pillFor(r.last)}</td>`}
           <td><b class="${r.gain>0?'gain-up':''}">${r.gain>0?'+':''}${r.gain}</b></td>
           <td><div class="gain-bar"><div class="gb-first" style="width:${r.first}%"></div><div class="gb-best" style="left:${r.first}%;width:${Math.max(0,r.best-r.first)}%"></div></div></td>
         </tr>`; }).join('')}
@@ -2934,7 +2958,7 @@ function renderIndividuSection(records){
               <span class="is-meta">${s.mastered} dikuasai</span>
             </summary>
             <div style="overflow-x:auto"><table class="rec-table indiv-table">
-              <tr><th>Dalil</th><th>Tajuk</th><th>Cubaan</th><th>Skor pertama</th><th>Skor terbaik</th><th>Skor terakhir</th><th>Peningkatan</th><th style="min-width:120px;">Pertama → terbaik</th></tr>
+              <tr><th>Dalil</th><th>Tajuk</th><th>Cubaan</th><th>Skor pertama</th><th>Skor terbaik</th>${dashRintis?'':'<th>Skor terakhir</th>'}<th>Peningkatan</th><th style="min-width:120px;">Pertama → terbaik</th></tr>
               ${s.rows.map(x=>`
                 <tr>
                   <td>${x.ref}</td>
@@ -2942,7 +2966,7 @@ function renderIndividuSection(records){
                   <td>${x.n}</td>
                   <td>${pillFor(x.first)}</td>
                   <td>${pillFor(x.best)}</td>
-                  <td>${pillFor(x.last)}</td>
+                  ${dashRintis?'':`<td>${pillFor(x.last)}</td>`}
                   <td><b class="${x.gain>0?'gain-up':''}">${x.gain>0?'+':''}${x.gain}</b></td>
                   <td><div class="gain-bar"><div class="gb-first" style="width:${x.first}%"></div><div class="gb-best" style="left:${x.first}%;width:${Math.max(0,x.best-x.first)}%"></div></div></td>
                 </tr>`).join('')}
@@ -2967,8 +2991,15 @@ async function renderDashboard(){
   const semRecords = filterValue === '__ALL__' ? allRecords : allRecords.filter(r => (r.semester||'Sesi Tidak Diketahui') === filterValue);
   const kelasEver = [...new Set(semRecords.map(r=>r.kelas||'').filter(Boolean))].sort();
   if(dashKelasFilter !== '__ALL__' && !kelasEver.includes(dashKelasFilter)) dashKelasFilter = '__ALL__';
-  const records = dashKelasFilter === '__ALL__' ? semRecords : semRecords.filter(r => (r.kelas||'') === dashKelasFilter);
+  const fullRecords = dashKelasFilter === '__ALL__' ? semRecords : semRecords.filter(r => (r.kelas||'') === dashKelasFilter);
+  const rintis = dashRintis ? applyRintisFilter(fullRecords) : null;
+  const records = rintis ? rintis.records : fullRecords;
   const s = summarize(records);
+  const rx = rintis ? rintis.ex : null;
+  const rintisNote = rx ? `<div class="rintis-note">
+      <b>Paparan kajian rintis (20–23 Nov 2026):</b> 5 ayat sasaran, ukuran utama <b>skor pertama (pra) → skor terbaik</b>.
+      Dikecualikan daripada paparan: ${rx.siling} rekod sudah 100% sejak cubaan pertama · ${rx.tiadaPasca} rekod tanpa bacaan pasca · ${rx.luarTarikh} rekod di luar tarikh kajian · ${rx.luarAyat} rekod ayat lain · ${rx.penguji} rekod cubaan pensyarah.
+      Semua rekod asal kekal dalam Google Sheet.</div>` : '';
   const allSemestersEver = [...new Set(allRecords.map(r=>r.semester||'Sesi Tidak Diketahui'))];
 
   root.innerHTML = `
@@ -2992,7 +3023,9 @@ async function renderDashboard(){
           <option value="__ALL__" ${dashKelasFilter==='__ALL__'?'selected':''}>Semua kelas</option>
           ${kelasEver.map(k=>`<option value="${k}" ${dashKelasFilter===k?'selected':''}>${k}</option>`).join('')}
         </select>
+        <label class="siling-toggle" style="margin:0;"><input type="checkbox" id="rintisToggle" ${dashRintis?'checked':''}> Paparan kajian rintis</label>
       </div>
+      ${rintisNote}
     </div>
 
     <div class="stat-row">
@@ -3057,9 +3090,10 @@ async function renderDashboard(){
 
   // (Log terperinci dibuang dari paparan — data lengkap ada dalam Google Sheet & butang CSV di atas)
 
-  document.getElementById('exportBtn').onclick = ()=> exportCSV(records, filterValue + (dashKelasFilter!=='__ALL__' ? '_'+dashKelasFilter : ''));
+  document.getElementById('exportBtn').onclick = ()=> exportCSV(fullRecords, filterValue + (dashKelasFilter!=='__ALL__' ? '_'+dashKelasFilter : ''));
 
   document.getElementById('kelasSelect').onchange = (e)=>{ dashKelasFilter = e.target.value; renderDashboard(); };
+  const rtg = document.getElementById('rintisToggle'); if(rtg) rtg.onchange = ()=>{ dashRintis = rtg.checked; renderDashboard(); };
   document.getElementById('semesterSelect').onchange = (e)=>{
     dashSemesterFilter = e.target.value;
     renderDashboard();
