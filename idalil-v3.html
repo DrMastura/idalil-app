@@ -2811,9 +2811,7 @@ function applyRintisFilter(records){
   const ex = {penguji:0, luarAyat:0, luarTarikh:0, tiadaPasca:0, siling:0};
   const kept = records.filter(r=>{
     if(isPenguji(r.studentName)) { ex.penguji++; return false; }
-    if(!RINTIS_DALIL.includes(r.dalilId)) { ex.luarAyat++; return false; }
-    const t0 = r.attempts[0]?.ts || 0;
-    if(!(t0 >= RINTIS_MULA && t0 < RINTIS_TAMAT)) { ex.luarTarikh++; return false; }
+    // semua dalil & semua tarikh disertakan (bacaan pertama = bacaan asal sebelum berlatih)
     if((r.attempts||[]).length < 2) { ex.tiadaPasca++; return false; }
     if((r.attempts[0]?.score ?? 0) >= 100) { ex.siling++; return false; }
     return true;
@@ -2997,8 +2995,8 @@ async function renderDashboard(){
   const s = summarize(records);
   const rx = rintis ? rintis.ex : null;
   const rintisNote = rx ? `<div class="rintis-note">
-      <b>Paparan kajian rintis (20–23 Nov 2026):</b> 5 ayat sasaran, ukuran utama <b>skor pertama (pra) → skor terbaik</b>.
-      Dikecualikan daripada paparan: ${rx.siling} rekod sudah 100% sejak cubaan pertama · ${rx.tiadaPasca} rekod tanpa bacaan pasca · ${rx.luarTarikh} rekod di luar tarikh kajian · ${rx.luarAyat} rekod ayat lain · ${rx.penguji} rekod cubaan pensyarah.
+      <b>Paparan analisis data latihan:</b> semua dalil, ukuran utama <b>skor pertama (bacaan asal) → skor terbaik</b>.
+      Dikecualikan daripada analisis: ${rx.siling} rekod sudah 100% sejak cubaan pertama · ${rx.tiadaPasca} rekod dengan satu cubaan sahaja · ${rx.penguji} rekod cubaan pensyarah.
       Semua rekod asal kekal dalam Google Sheet.</div>` : '';
   const allSemestersEver = [...new Set(allRecords.map(r=>r.semester||'Sesi Tidak Diketahui'))];
 
@@ -3023,7 +3021,7 @@ async function renderDashboard(){
           <option value="__ALL__" ${dashKelasFilter==='__ALL__'?'selected':''}>Semua kelas</option>
           ${kelasEver.map(k=>`<option value="${k}" ${dashKelasFilter===k?'selected':''}>${k}</option>`).join('')}
         </select>
-        <label class="siling-toggle" style="margin:0;"><input type="checkbox" id="rintisToggle" ${dashRintis?'checked':''}> Paparan kajian rintis</label>
+        <label class="siling-toggle" style="margin:0;"><input type="checkbox" id="rintisToggle" ${dashRintis?'checked':''}> Paparan analisis</label>
       </div>
       ${rintisNote}
     </div>
